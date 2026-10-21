@@ -109,6 +109,12 @@ export function applyOneQubit(
   }
 }
 
+/** CZ on two qubits: negates the |11⟩ amplitude. Real, diagonal and self-inverse. */
+export function applyCz(state: Float64Array, so: number): void {
+  state[so + 6] = -state[so + 6];
+  state[so + 7] = -state[so + 7];
+}
+
 /** CNOT(control=0, target=1) on two qubits: swaps amplitudes |10⟩ and |11⟩. Self-inverse. */
 export function applyCnot01(state: Float64Array, so: number): void {
   const a = so + 4;

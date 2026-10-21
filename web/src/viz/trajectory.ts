@@ -1,5 +1,5 @@
-import type { NumQubits } from '../sim/circuit';
-import { applyCnot01, applyOneQubit, rot } from '../sim/gates';
+import { applyEntangler, type Entangler, type NumQubits } from '../sim/circuit';
+import { applyOneQubit, rot } from '../sim/gates';
 import { blochVector, tangle } from './quantum';
 
 /** The path of one sample through the circuit, for "follow a sample". */
@@ -10,7 +10,7 @@ export interface SampleTrace {
   layers: number[][];
   /**
    * Smooth path from |0⟩ in plot coordinates: Bloch vector (1 qubit) or (p|01⟩, p|10⟩, p|00⟩) (2 qubits).
-   * Every sub-rotation is interpolated; the CNOT is a jump.
+   * Every sub-rotation is interpolated; the entangler is a jump.
    */
   path: number[][];
   /** Index into `path` of the state after each layer. */
@@ -33,6 +33,7 @@ export function sampleTrace(
   theta: ArrayLike<number>,
   x: ArrayLike<number>,
   steps = 8,
+  entangler: Entangler = 'cnot',
 ): SampleTrace {
   const Q = numQubits;
   const P = numLayers * Q * 3;
@@ -64,7 +65,7 @@ export function sampleTrace(
       psi.set(cur);
     }
     if (Q === 2) {
-      applyCnot01(psi, 0);
+      applyEntangler(entangler, psi, 0);
       path.push(point(psi));
     }
     layerEnd.push(path.length - 1);

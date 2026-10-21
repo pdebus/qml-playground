@@ -1,4 +1,4 @@
-import type { NumQubits } from '../sim/circuit';
+import type { Architecture, NumQubits } from '../sim/circuit';
 import { fourierCurve, type RegressionDataset } from '../data/datasets';
 import { QuantumModel } from '../model/qmodel';
 
@@ -39,8 +39,14 @@ export function targetSpectrum(dataset: string): number[] {
 }
 
 /** Spectrum of the model output ⟨Z⟩ (without MC noise) for parameters θ. */
-export function modelSpectrum(numQubits: NumQubits, numLayers: number, dataset: RegressionDataset, theta: ArrayLike<number>): number[] {
-  const model = new QuantumModel({ task: 'regression', dataset, numQubits, numLayers });
+export function modelSpectrum(
+  numQubits: NumQubits,
+  numLayers: number,
+  dataset: RegressionDataset,
+  theta: ArrayLike<number>,
+  arch?: Architecture,
+): number[] {
+  const model = new QuantumModel({ task: 'regression', dataset, numQubits, numLayers, arch });
   model.setParams(theta);
   return fourierMagnitudes(model.predictRegression(spectrumGrid()));
 }

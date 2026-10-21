@@ -42,11 +42,6 @@ export function App() {
           <div>
             <h1>QML Playground</h1>
             <p className="hero-tagline">Train and explore data re-uploading quantum circuits in real time.</p>
-            <ul className="hero-chips" aria-label="Highlights">
-              <li>1–2 qubits</li>
-              <li>data re-uploading</li>
-              <li>runs 100% in your browser</li>
-            </ul>
           </div>
         </div>
         <div className="header-actions">
@@ -102,7 +97,7 @@ export function App() {
           </a>
         </nav>
         <span className="muted">
-          © {new Date().getFullYear()} Pascal Debus, Fraunhofer AISEC · All computation runs locally in your browser.
+          © {new Date().getFullYear()} Pascal Debus, Fraunhofer AISEC
         </span>
       </footer>
     </div>

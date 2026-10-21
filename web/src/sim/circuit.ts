@@ -1,6 +1,34 @@
-import { applyCnot01, applyOneQubit, rot, rotDerivs } from './gates';
+import { applyCnot01, applyCz, applyOneQubit, rot, rotDerivs } from './gates';
 
 export type NumQubits = 1 | 2;
+
+/** Two-qubit gate at the end of every layer. */
+export type Entangler = 'cnot' | 'cz' | 'none';
+/** Which rotation angles upload the data: all three (w·x + b), or only RY's θ (φ and ω are pure biases). */
+export type DataAngles = 'all' | 'ry';
+/** Trainable data weights w, or fixed w = π (x ∈ [−1, 1] sweeps a full turn; integer frequencies in t = πx). */
+export type WeightMode = 'trainable' | 'fixed';
+
+export interface Architecture {
+  entangler: Entangler;
+  dataAngles: DataAngles;
+  weights: WeightMode;
+}
+
+/** The architecture of the original model (and of the PyTorch reference). */
+export const DEFAULT_ARCHITECTURE: Architecture = { entangler: 'cnot', dataAngles: 'all', weights: 'trainable' };
+export const FIXED_WEIGHT = Math.PI;
+
+/** Whether sub-gate j ∈ {φ, θ, ω} of a Rot uploads the data. */
+export function isDataAngle(j: number, dataAngles: DataAngles): boolean {
+  return dataAngles === 'all' || j === 1;
+}
+
+/** Applies the entangling gate of a layer (all choices are real and self-inverse). */
+export function applyEntangler(entangler: Entangler, state: Float64Array, so: number): void {
+  if (entangler === 'cnot') applyCnot01(state, so);
+  else if (entangler === 'cz') applyCz(state, so);
+}
 
 /**
  * Data re-uploading circuit on 1 or 2 qubits.
@@ -11,7 +39,7 @@ export type NumQubits = 1 | 2;
  *  - 2 qubits (`StateVecSimTorch.get_angles`): f_k = k mod F
  *  - 1 qubit  (`SingleQubitReuploadingTorch.forward`, reshaped as (3, layers)): f_k = (j * layers + layer) mod F
  *
- * Each layer applies Rot on every qubit, followed by CNOT(0→1) for two qubits.
+ * Each layer applies Rot on every qubit, followed by the entangler (default CNOT(0→1)) for two qubits.
  */
 export class Circuit {
   readonly numQubits: NumQubits;
@@ -22,6 +50,7 @@ export class Circuit {
   readonly stateSize: number;
   readonly numAngles: number;
   readonly featIdx: Int32Array;
+  readonly entangler: Entangler;
 
   private readonly u: Float64Array; // one Rot matrix per qubit
   private readonly du: Float64Array; // 3 derivative matrices per qubit
@@ -30,8 +59,9 @@ export class Circuit {
   private readonly base: Float64Array;
   private readonly psi: Float64Array;
 
-  constructor(numQubits: NumQubits, numLayers: number, numFeatures: number) {
+  constructor(numQubits: NumQubits, numLayers: number, numFeatures: number, entangler: Entangler = 'cnot') {
     this.numQubits = numQubits;
+    this.entangler = numQubits === 2 ? entangler : 'none';
     this.numLayers = numLayers;
     this.numFeatures = numFeatures;
     this.dim = 1 << numQubits;
@@ -86,7 +116,7 @@ export class Circuit {
     for (let l = 0; l < this.numLayers; l++) {
       this.layerUnitaries(l);
       for (let q = 0; q < numQubits; q++) applyOneQubit(psi, 0, numQubits, q, this.u, 8 * q);
-      if (numQubits === 2) applyCnot01(psi, 0);
+      applyEntangler(this.entangler, psi, 0);
       statesOut.set(psi, so + l * stateSize);
     }
   }
@@ -114,7 +144,7 @@ export class Circuit {
     const a = this.angles;
 
     for (let l = this.numLayers - 1; l >= 0; l--) {
-      if (numQubits === 2) applyCnot01(g, 0);
+      applyEntangler(this.entangler, g, 0);
 
       // ψ_{l-1}: state entering this layer
       if (l === 0) {
@@ -147,7 +177,7 @@ export class Circuit {
         }
       }
 
-      // g ← U_l† g (rotation part; CNOT handled above)
+      // g ← U_l† g (rotation part; the self-inverse entangler is handled above)
       for (let q = 0; q < numQubits; q++) applyOneQubit(g, 0, numQubits, q, u, 8 * q, true);
     }
   }

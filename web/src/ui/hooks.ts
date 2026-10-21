@@ -120,7 +120,7 @@ export function useFollowedSample(snap: Snapshot | null): FollowedSample | null 
     const F = info.task === 'regression' ? 1 : 2;
     const x = Array.from(info.testX.subarray(sample.index * F, (sample.index + 1) * F));
     return {
-      ...sampleTrace(info.numQubits, info.numLayers, featIdx, theta, x),
+      ...sampleTrace(info.numQubits, info.numLayers, featIdx, theta, x, 8, info.arch.entangler),
       index: sample.index,
       pinned: sample.pinned,
       x,

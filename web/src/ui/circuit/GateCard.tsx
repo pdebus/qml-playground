@@ -56,6 +56,8 @@ export function GateCard({
   numLayers,
   feature,
   values,
+  dataAngle,
+  fixedWeight,
   w,
   b,
   gw,
@@ -73,6 +75,10 @@ export function GateCard({
   feature: string;
   /** That feature's value for every training sample. */
   values: Float64Array;
+  /** The angle uploads the data (otherwise it is a pure bias). */
+  dataAngle: boolean;
+  /** The data weight is fixed to π (not trained). */
+  fixedWeight: boolean;
   w: number;
   b: number;
   gw: number | null;
@@ -149,14 +155,22 @@ export function GateCard({
         <dl className="gate-card-values">
           <dt>angle</dt>
           <dd>
-            {angle} = w·{feature} + b
+            {dataAngle ? `${angle} = ${fixedWeight ? 'π' : 'w'}·${feature} + b` : `${angle} = b (no data)`}
           </dd>
-          <dt>w</dt>
-          <dd>{fmt(w)}</dd>
+          {dataAngle && (
+            <>
+              <dt>w</dt>
+              <dd>{fixedWeight ? 'π (fixed)' : fmt(w)}</dd>
+            </>
+          )}
           <dt>b</dt>
           <dd>{fmt(b)} rad</dd>
-          <dt>∂L/∂w</dt>
-          <dd>{gw === null ? '–' : fmtGrad(gw)}</dd>
+          {dataAngle && !fixedWeight && (
+            <>
+              <dt>∂L/∂w</dt>
+              <dd>{gw === null ? '–' : fmtGrad(gw)}</dd>
+            </>
+          )}
           <dt>∂L/∂b</dt>
           <dd>{gb === null ? '–' : fmtGrad(gb)}</dd>
           {sampleAngle !== null && (

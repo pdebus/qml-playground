@@ -39,7 +39,7 @@ export function OutputPanel() {
   const theta = snap?.theta ?? null;
   const spectrum = useMemo(() => {
     if (!info?.regression || !target) return null;
-    const model = theta ? modelSpectrum(info.numQubits, info.numLayers, info.dataset as RegressionDataset, theta) : null;
+    const model = theta ? modelSpectrum(info.numQubits, info.numLayers, info.dataset as RegressionDataset, theta, info.arch) : null;
     return spectrumFigure(theme, target, model);
   }, [info, target, theta, theme]);
   const spectrumRef = usePlot(spectrum);

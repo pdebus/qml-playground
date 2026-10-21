@@ -1,6 +1,17 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useApp } from '../../state/store';
-import { LAYERS, LR_OPTIONS, MC_RUNS, REG_STRENGTH_OPTIONS, REG_TYPES, SIGMA } from '../../state/settings';
+import {
+  DATA_ANGLES,
+  DEFAULT_SETTINGS,
+  ENTANGLERS,
+  LAYERS,
+  LR_OPTIONS,
+  MC_RUNS,
+  REG_STRENGTH_OPTIONS,
+  REG_TYPES,
+  SIGMA,
+  WEIGHT_MODES,
+} from '../../state/settings';
 import { Field, IconButton, InfoTip, Panel, Segmented, Select, Slider } from '../controls/Controls';
 
 const LAYER_TICKS = Array.from({ length: LAYERS.max - LAYERS.min + 1 }, (_, i) => LAYERS.min + i);
@@ -23,6 +34,17 @@ export function SettingsPanel() {
   const s = useApp((st) => st.settings);
   const update = useApp((st) => st.update);
   const regression = s.task === 'regression';
+  const [archOpen, setArchOpen] = useState(false);
+  const archLabel = (o: { value: string; label: string }[], v: string) => o.find((x) => x.value === v)?.label ?? v;
+  const archSummary = [
+    s.numQubits === 2 ? archLabel(ENTANGLERS, s.entangler) : null,
+    archLabel(DATA_ANGLES, s.dataAngles),
+    `w ${archLabel(WEIGHT_MODES, s.weights).toLowerCase()}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const archDefault =
+    s.entangler === DEFAULT_SETTINGS.entangler && s.dataAngles === DEFAULT_SETTINGS.dataAngles && s.weights === DEFAULT_SETTINGS.weights;
 
   return (
     <Panel title="Settings" area="settings">
@@ -71,6 +93,50 @@ export function SettingsPanel() {
             <IconButton icon="dice" label="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 100000) })} />
           </div>
         </Field>
+      </SettingsRow>
+
+      <SettingsRow
+        label="Architecture"
+        info="Variations of the circuit. Each change re-initializes the model. The defaults are the original model from the paper."
+      >
+        <button
+          type="button"
+          className={`arch-toggle${archDefault ? '' : ' changed'}`}
+          aria-expanded={archOpen}
+          onClick={() => setArchOpen(!archOpen)}
+        >
+          <span>{archSummary}</span>
+          <span aria-hidden="true">{archOpen ? '▴' : '▾'}</span>
+        </button>
+        {archOpen && (
+          <>
+            {s.numQubits === 2 && (
+              <Field
+                label="Entangler"
+                info="Two-qubit gate after every layer. CNOT flips Q2 when Q1 is |1⟩; CZ flips the sign of |11⟩; None keeps the qubits independent (no entanglement)."
+              >
+                <Segmented
+                  label="Entangling gate"
+                  value={s.entangler}
+                  options={ENTANGLERS}
+                  onChange={(v) => update({ entangler: v })}
+                />
+              </Field>
+            )}
+            <Field
+              label="Data on"
+              info="All angles: φ, θ and ω each upload one feature as w·x + b. RY only: only θ uploads the data; φ and ω are trainable biases."
+            >
+              <Segmented label="Angles that upload data" value={s.dataAngles} options={DATA_ANGLES} onChange={(v) => update({ dataAngles: v })} />
+            </Field>
+            <Field
+              label="Weights w"
+              info="Fixed π: every data weight is w = π, so x ∈ [−1, 1] sweeps a full turn and the model is a Fourier series with integer frequencies in t = πx (see the spectrum for regression). Only the biases are trained."
+            >
+              <Segmented label="Data weights" value={s.weights} options={WEIGHT_MODES} onChange={(v) => update({ weights: v })} />
+            </Field>
+          </>
+        )}
       </SettingsRow>
 
       <SettingsRow label="Training">

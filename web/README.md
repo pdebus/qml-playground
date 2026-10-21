@@ -51,7 +51,7 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
 ```
 
 - **Simulation.** States are interleaved `Float64Array`s. Every layer applies `Rot(φ,θ,ω) = RZ(ω)RY(θ)RZ(φ)` per
-  qubit with angles `w·x + b`, then `CNOT(0→1)` for two qubits. Qubit 0 is the most significant bit.
+  qubit with angles `w·x + b`, then an entangler (default `CNOT(0→1)`) for two qubits. Qubit 0 is the most significant bit.
   Gradients are exact. The adjoint method walks the layers backwards, computing `∂L/∂a = Re⟨g|∂U/∂a|ψ⟩` and
   `g ← U†g`. An epoch of the largest configuration (2 qubits, 15 layers, 500 samples) takes about 10 ms.
 - **Real-time loop.** The worker trains at the selected speed (1–60 epochs/s, or max). After each epoch it
@@ -71,6 +71,11 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
   gradients exist anyway; without regularization) and, for two qubits, the mean test-set tangle per layer. The
   Metrics panel shows both as epoch × layer heatmaps (histories over 300 epochs are averaged into bins). The
   circuit's *Gradient flow* toggle scales the taps with |∂L/∂w| and dims gates below 1% of the largest gradient.
+- **Architecture options** (Settings → Architecture, structural, URL keys `ent`, `da`, `w`): the entangler
+  (CNOT, CZ or none), which angles upload the data (all, or only RY's θ; φ and ω become pure biases) and the data
+  weights (trainable, or fixed w = π for integer frequencies). Frozen weights are set in `QuantumModel` and get zero
+  gradient, so Adam leaves them alone. The defaults are the original model, so old links and the parity fixtures
+  stay valid.
 - **Replay.** Parameters and Adam state are recorded per epoch, for the last 5000 epochs. Seeking shows a past
   epoch. *Resume from here* truncates the history and continues training from that point.
 - **Sharing.** Settings are kept in the URL hash. *Share trained model* also encodes the displayed parameters

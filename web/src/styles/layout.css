@@ -87,25 +87,9 @@ a {
   line-height: 1.1;
 }
 .hero-tagline {
-  margin: 4px 0 8px;
+  margin: 4px 0 0;
   font-size: 14px;
   opacity: 0.92;
-}
-.hero-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.hero-chips li {
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.28);
 }
 .header-actions {
   position: relative;
@@ -476,7 +460,7 @@ input[type='range']::-moz-range-thumb {
 /* ---------- Settings rows ---------- */
 .settings-row {
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  grid-template-columns: 112px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
 }
@@ -492,8 +476,10 @@ input[type='range']::-moz-range-thumb {
   letter-spacing: 0.06em;
   color: var(--muted);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 .settings-row-fields {
   display: flex;
@@ -1045,4 +1031,28 @@ input[type='range']::-moz-range-thumb {
 /* ---------- Gradient flow ---------- */
 .gate.vanishing {
   opacity: 0.35;
+}
+
+/* ---------- Architecture options ---------- */
+.arch-toggle {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 8px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.arch-toggle:hover {
+  border-color: var(--border-strong);
+}
+.arch-toggle.changed {
+  border-color: var(--accent);
 }

@@ -1,5 +1,5 @@
 import type { DatasetName, TaskType } from '../data/datasets';
-import type { NumQubits } from '../sim/circuit';
+import type { Architecture, NumQubits } from '../sim/circuit';
 import type { Settings } from '../state/settings';
 
 export interface RestoreState {
@@ -28,6 +28,7 @@ export interface DataInfo {
   dataset: DatasetName;
   numQubits: NumQubits;
   numLayers: number;
+  arch: Architecture;
   numClasses: number;
   trainX: Float64Array;
   trainY: Float64Array;

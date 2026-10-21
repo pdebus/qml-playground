@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { Circuit } from '../../sim/circuit';
+import { Circuit, isDataAngle } from '../../sim/circuit';
 import type { DataInfo, Snapshot, UnitMaps } from '../../worker/protocol';
 import type { PlotTheme } from '../../viz/theme';
 import {
@@ -195,6 +195,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   const Q = info.numQubits;
   const L = info.numLayers;
   const F = regression ? 1 : 2;
+  const arch = info.arch;
   const featIdx = useMemo(() => new Circuit(Q, L, F).featIdx, [Q, L, F]);
   const g = geometry(Q, F, compact);
   const units = snap?.units ?? null;
@@ -290,6 +291,8 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           const w = theta ? theta[k] : 0;
           const b = theta ? theta[P + k] : 0;
           const f = featIdx[k];
+          const data = isDataAngle(j, arch.dataAngles);
+          const fixed = arch.weights === 'fixed';
           const x = g.gateX(i, j);
           const cx = x + g.gateW / 2;
           const cy = g.wireY(q);
@@ -303,8 +306,10 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           const strength = showGrad ? Math.sqrt(Math.abs(gw) / gradScale.maxW) : Math.min(1, Math.abs(w) / Math.PI);
           const color = showGrad ? 'var(--accent)' : w >= 0 ? POSITIVE : NEGATIVE;
           const vanishing = showGrad && gateGrad < 0.01;
-          const title =
-            `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = w·${featureName(f)} + b\n` +
+          const title = !data
+            ? `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = b (no data, trainable bias)\nb = ${fmt(b)} rad` +
+              (gradScale ? `\n∂L/∂b = ${gb.toExponential(1)}` : '')
+            : `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = ${fixed ? 'π' : 'w'}·${featureName(f)} + b\n` +
             `w = ${fmt(w)}, b = ${fmt(b)} rad\n` +
             (Math.abs(w) >= Math.PI
               ? `The data sweeps ${(Math.abs(w) / Math.PI).toFixed(1)} full turns (high-frequency encoding).`
@@ -312,16 +317,20 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
             (gradScale ? `\n∂L/∂w = ${gw.toExponential(1)}, ∂L/∂b = ${gb.toExponential(1)}` : '');
           return (
             <g key={`${q}-${j}`}>
-              <line
-                x1={cx}
-                x2={cx}
-                y1={busY}
-                y2={fromBottom ? bottom : top}
-                stroke={color}
-                strokeWidth={1 + 3.5 * strength}
-                strokeOpacity={0.25 + 0.75 * strength}
-              />
-              <circle cx={cx} cy={busY} r={1.5 + strength * 1.5} fill={color} />
+              {data && (
+                <>
+                  <line
+                    x1={cx}
+                    x2={cx}
+                    y1={busY}
+                    y2={fromBottom ? bottom : top}
+                    stroke={color}
+                    strokeWidth={1 + 3.5 * strength}
+                    strokeOpacity={0.25 + 0.75 * strength}
+                  />
+                  <circle cx={cx} cy={busY} r={1.5 + strength * 1.5} fill={color} />
+                </>
+              )}
               <g
                 className={`gate${gate && gate.l === l && gate.q === q && gate.j === j ? ' selected' : ''}${vanishing ? ' vanishing' : ''}`}
                 role="button"
@@ -343,7 +352,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
                   </text>
                 )}
                 <Dial cx={cx} cy={g.labels ? cy + 1 : cy} r={g.dialR} w={w} b={b} sample={followed?.angles[k]} />
-                {g.labels && (
+                {g.labels && data && (
                   <text x={cx} y={bottom - 4} textAnchor="middle" className="gate-feature">
                     {featureName(f)}
                   </text>
@@ -354,13 +363,21 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
         }),
       )}
 
-      {Q === 2 && (
+      {Q === 2 && arch.entangler === 'cnot' && (
         <g className="cnot">
           <title>CNOT: flips Q2 when Q1 is |1⟩. This is the only gate that can entangle the qubits.</title>
           <line x1={g.entX(i)} x2={g.entX(i)} y1={g.wireY(0)} y2={g.wireY(1) + 9} className="wire" />
           <circle cx={g.entX(i)} cy={g.wireY(0)} r={4.5} fill="var(--text)" />
           <circle cx={g.entX(i)} cy={g.wireY(1)} r={9} fill="var(--surface)" className="wire" />
           <line x1={g.entX(i) - 9} x2={g.entX(i) + 9} y1={g.wireY(1)} y2={g.wireY(1)} className="wire" />
+        </g>
+      )}
+      {Q === 2 && arch.entangler === 'cz' && (
+        <g className="cnot">
+          <title>CZ: flips the sign of |11⟩. Symmetric in both qubits; the only gate that can entangle them.</title>
+          <line x1={g.entX(i)} x2={g.entX(i)} y1={g.wireY(0)} y2={g.wireY(1)} className="wire" />
+          <circle cx={g.entX(i)} cy={g.wireY(0)} r={4.5} fill="var(--text)" />
+          <circle cx={g.entX(i)} cy={g.wireY(1)} r={4.5} fill="var(--text)" />
         </g>
       )}
 
@@ -633,6 +650,8 @@ function GateDetails({
       values={values}
       w={snap ? snap.theta[k] : 0}
       b={snap ? snap.theta[P + k] : 0}
+      dataAngle={isDataAngle(gate.j, info.arch.dataAngles)}
+      fixedWeight={info.arch.weights === 'fixed'}
       gw={snap ? snap.grad[k] : null}
       gb={snap ? snap.grad[P + k] : null}
       sampleAngle={followed ? followed.angles[k] : null}

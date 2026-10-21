@@ -1,7 +1,7 @@
 import { createTaskData, fourierCurve, type TaskData } from '../data/datasets';
 import { Rng } from '../data/rng';
 import { QuantumModel, type TrainOptions } from '../model/qmodel';
-import type { Settings } from '../state/settings';
+import { architecture, type Settings } from '../state/settings';
 import { expvalZ0 } from '../model/losses';
 import { blochVector, reducedBloch, tangle, visualCoordinates } from '../viz/quantum';
 import type { DataInfo, MetricsChunk, RestoreState, Snapshot, UnitMaps } from './protocol';
@@ -70,6 +70,7 @@ export class Trainer {
       dataset: settings.dataset,
       numQubits: settings.numQubits,
       numLayers: settings.numLayers,
+      arch: architecture(settings),
     });
     this.model.init(settings.seed);
     this.rng = new Rng(settings.seed ^ 0x9e3779b9);
@@ -111,6 +112,7 @@ export class Trainer {
       dataset,
       numQubits,
       numLayers,
+      arch: this.model.arch,
       numClasses: this.model.numClasses,
       trainX: this.data.train.x,
       trainY: this.data.train.y,

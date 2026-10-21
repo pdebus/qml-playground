@@ -1,4 +1,4 @@
-import { Circuit, type NumQubits } from '../sim/circuit';
+import { Circuit, DEFAULT_ARCHITECTURE, FIXED_WEIGHT, isDataAngle, type Architecture, type NumQubits } from '../sim/circuit';
 import type { ClassificationDataset, DataSet, DatasetName, TaskType } from '../data/datasets';
 import { numClasses as datasetClasses, singleQubitTargets } from '../data/targets';
 import { Rng } from '../data/rng';
@@ -11,6 +11,8 @@ export interface ModelConfig {
   dataset: DatasetName;
   numQubits: NumQubits;
   numLayers: number;
+  /** Defaults to `DEFAULT_ARCHITECTURE`. */
+  arch?: Architecture;
 }
 
 export interface TrainOptions {
@@ -46,6 +48,9 @@ export class QuantumModel {
   readonly numClasses: number;
   readonly targets: Float64Array[];
   readonly adam: Adam;
+  readonly arch: Architecture;
+  /** 1 for parameters that are trained; frozen ones (fixed or unused weights) keep their value and get zero gradient. */
+  readonly trainable: Uint8Array;
   epoch = 0;
   /** ‖∂L/∂θ‖ per layer (weights and biases, without regularization) of the last `lossAndGrad`. */
   readonly layerGradNorms: Float64Array;
@@ -62,8 +67,13 @@ export class QuantumModel {
   constructor(config: ModelConfig) {
     this.config = config;
     const features = config.task === 'regression' ? 1 : 2;
-    this.circuit = new Circuit(config.numQubits, config.numLayers, features);
+    this.arch = { ...DEFAULT_ARCHITECTURE, ...config.arch };
+    this.circuit = new Circuit(config.numQubits, config.numLayers, features, this.arch.entangler);
     this.P = this.circuit.numAngles;
+    this.trainable = new Uint8Array(2 * this.P).fill(1);
+    for (let k = 0; k < this.P; k++) {
+      if (!isDataAngle(k % 3, this.arch.dataAngles) || this.arch.weights === 'fixed') this.trainable[k] = 0;
+    }
     this.theta = new Float64Array(2 * this.P);
     this.weights = this.theta.subarray(0, this.P);
     this.biases = this.theta.subarray(this.P);
@@ -93,12 +103,25 @@ export class QuantumModel {
     const rng = new Rng(seed);
     const sample = this.config.numQubits === 1 ? () => rng.normal() : () => rng.next();
     for (let i = 0; i < this.theta.length; i++) this.theta[i] = sample();
+    this.constrain();
     this.adam.reset();
     this.epoch = 0;
   }
 
   setParams(theta: ArrayLike<number>): void {
     this.theta.set(theta);
+    this.constrain();
+  }
+
+  /** Sets the frozen weights: 0 for angles without data, π for fixed data weights. */
+  private constrain(): void {
+    for (let k = 0; k < this.P; k++) {
+      if (!this.trainable[k]) this.weights[k] = isDataAngle(k % 3, this.arch.dataAngles) ? FIXED_WEIGHT : 0;
+    }
+  }
+
+  private zeroFrozenGrad(): void {
+    for (let i = 0; i < this.grad.length; i++) if (!this.trainable[i]) this.grad[i] = 0;
   }
 
   get stateSize(): number {
@@ -133,6 +156,7 @@ export class QuantumModel {
       loss += this.sampleLoss(this.sampleStates, lastOffset, set.y[i], scale) * scale;
       circuit.backward(set.x, xo, weights, biases, this.sampleStates, 0, g, gw, gb);
     }
+    this.zeroFrozenGrad();
     const per = this.P / this.config.numLayers;
     for (let l = 0; l < this.config.numLayers; l++) {
       let sq = 0;
@@ -141,6 +165,7 @@ export class QuantumModel {
     }
     if (opts && opts.regType !== 'none') {
       loss += applyRegularization(this.theta, this.grad, opts.regType, opts.regStrength);
+      this.zeroFrozenGrad();
     }
     return loss;
   }

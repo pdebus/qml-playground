@@ -1,6 +1,6 @@
 import { isValidDataset, type DatasetName, type TaskType } from '../data/datasets';
 import type { RegType } from '../model/regularization';
-import type { NumQubits } from '../sim/circuit';
+import { DEFAULT_ARCHITECTURE, type Architecture, type DataAngles, type Entangler, type NumQubits, type WeightMode } from '../sim/circuit';
 
 /** Everything the user can configure. Mirrors the controls in `app/layout.py`. */
 export interface Settings {
@@ -20,10 +20,14 @@ export interface Settings {
   speed: number;
   /** Resolution of the decision-boundary grid (n × n). */
   gridSize: number;
+  /** Architecture options (see `Architecture`); the defaults reproduce the original model. */
+  entangler: Entangler;
+  dataAngles: DataAngles;
+  weights: WeightMode;
 }
 
 /** Changing one of these re-initializes the model, like the reset triggers of the Dash app. */
-export const STRUCTURAL_KEYS = ['task', 'dataset', 'numQubits', 'numLayers', 'seed'] as const;
+export const STRUCTURAL_KEYS = ['task', 'dataset', 'numQubits', 'numLayers', 'seed', 'entangler', 'dataAngles', 'weights'] as const;
 export type StructuralSettings = Pick<Settings, (typeof STRUCTURAL_KEYS)[number]>;
 
 export const LR_OPTIONS = [0.001, 0.01, 0.05, 0.1, 0.5];
@@ -39,6 +43,23 @@ export const BATCH = { min: 1, max: 128 };
 export const SIGMA = { min: 0, max: 1, step: 0.01 };
 export const MC_RUNS = { min: 1, max: 30 };
 export const GRID_SIZES = [15, 25, 40, 60];
+export const ENTANGLERS: { value: Entangler; label: string }[] = [
+  { value: 'cnot', label: 'CNOT' },
+  { value: 'cz', label: 'CZ' },
+  { value: 'none', label: 'None' },
+];
+export const DATA_ANGLES: { value: DataAngles; label: string }[] = [
+  { value: 'all', label: 'All angles' },
+  { value: 'ry', label: 'RY only' },
+];
+export const WEIGHT_MODES: { value: WeightMode; label: string }[] = [
+  { value: 'trainable', label: 'Trainable' },
+  { value: 'fixed', label: 'Fixed π' },
+];
+
+export function architecture(s: Settings): Architecture {
+  return { entangler: s.entangler, dataAngles: s.dataAngles, weights: s.weights };
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   task: 'classification',
@@ -54,6 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
   seed: 42,
   speed: 2,
   gridSize: 40,
+  ...DEFAULT_ARCHITECTURE,
 };
 
 export function defaultDataset(task: TaskType): DatasetName {
@@ -94,6 +116,9 @@ export function sanitizeSettings(partial: Partial<Record<keyof Settings, unknown
   if (SPEED_OPTIONS.includes(spd)) s.speed = spd;
   const grid = num(partial.gridSize);
   if (GRID_SIZES.includes(grid)) s.gridSize = grid;
+  if (ENTANGLERS.some((o) => o.value === partial.entangler)) s.entangler = partial.entangler as Entangler;
+  if (DATA_ANGLES.some((o) => o.value === partial.dataAngles)) s.dataAngles = partial.dataAngles as DataAngles;
+  if (WEIGHT_MODES.some((o) => o.value === partial.weights)) s.weights = partial.weights as WeightMode;
   return s;
 }
 

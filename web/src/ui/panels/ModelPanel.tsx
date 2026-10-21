@@ -15,6 +15,15 @@ export function CircuitPanel() {
     120,
   );
   const qubits = info?.numQubits ?? 1;
+  const arch = info?.arch;
+  const entangling =
+    qubits === 2 && arch && arch.entangler !== 'none'
+      ? `, followed by a ${arch.entangler === 'cz' ? 'CZ' : 'CNOT'} that can entangle the qubits`
+      : '';
+  const uploading =
+    arch?.dataAngles === 'ry'
+      ? ', where only the RY angle θ = w·x + b uploads the data and φ, ω are trainable biases'
+      : ', with each angle set to w·x + b for one input feature';
 
   return (
     <Panel
@@ -23,9 +32,9 @@ export function CircuitPanel() {
       actions={<FollowBadge />}
       info={
         <>
-          Data re-uploading circuit: every layer applies Rot(φ, θ, ω) = RZ(ω)·RY(θ)·RZ(φ) on each qubit, with each angle
-          set to w·x + b for one input feature{qubits === 2 ? ', followed by a CNOT that can entangle the qubits' : ''}.
-          Re-uploading the data in every layer makes the model more expressive, like depth in a neural network.
+          Data re-uploading circuit: every layer applies Rot(φ, θ, ω) = RZ(ω)·RY(θ)·RZ(φ) on each qubit{uploading}
+          {entangling}.{arch?.weights === 'fixed' && ' The data weights are fixed to w = π.'} Re-uploading the data in every
+          layer makes the model more expressive, like depth in a neural network.
         </>
       }
     >

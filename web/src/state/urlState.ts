@@ -16,6 +16,9 @@ const KEYS: Record<keyof Settings, string> = {
   seed: 'seed',
   speed: 'spd',
   gridSize: 'grid',
+  entangler: 'ent',
+  dataAngles: 'da',
+  weights: 'w',
 };
 
 const VERSION = '1';
