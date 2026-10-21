@@ -480,6 +480,160 @@ input[type='range']::-moz-range-thumb {
   flex: 0 0 110px;
 }
 
+/* ---------- Circuit view ---------- */
+.circuit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.circuit-placeholder {
+  height: 220px;
+}
+.circuit-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.circuit-scroll {
+  display: flex;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.circuit-inputs {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  background: var(--surface);
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.15);
+}
+.circuit-main {
+  flex: none;
+}
+.circuit svg text {
+  font-family: var(--font);
+}
+.circuit .wire {
+  stroke: var(--text);
+  stroke-width: 1.4;
+}
+.circuit .bus-outer {
+  stroke: var(--muted);
+  stroke-width: 3.2;
+  stroke-opacity: 0.55;
+}
+.circuit .bus-inner {
+  stroke: var(--surface);
+  stroke-width: 1.2;
+}
+.circuit-label {
+  font-size: 11px;
+  fill: var(--muted);
+}
+.circuit-label.strong {
+  fill: var(--text);
+  font-weight: 600;
+}
+.gate-box {
+  fill: var(--surface-2);
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+.gate:hover .gate-box {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.gate-name {
+  font-size: 9.5px;
+  font-weight: 700;
+  fill: var(--text);
+}
+.gate-feature {
+  font-size: 9px;
+  fill: var(--muted);
+}
+.dial-badge {
+  font-size: 8px;
+  font-weight: 700;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 2.5px;
+}
+.unit-tile {
+  cursor: crosshair;
+  image-rendering: auto;
+}
+.unit-frame {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.unit-frame.dashed {
+  stroke-dasharray: 3 2;
+}
+.unit-frame.strong {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.unit-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.unit-legend-bar {
+  display: inline-block;
+  width: 90px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.unit-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.unit-legend-chip i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.unit-hover {
+  position: absolute;
+  z-index: 30;
+  width: 176px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+}
+.unit-hover img {
+  display: block;
+  margin: 6px 0;
+  border-radius: 4px;
+}
+.unit-hover-title {
+  font-weight: 600;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 /* ---------- Footer ---------- */
 .app-footer {
   margin-top: 20px;

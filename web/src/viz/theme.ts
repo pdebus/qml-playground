@@ -47,19 +47,6 @@ export const PLOT_THEMES: Record<ResolvedTheme, PlotTheme> = {
 /** Plotly's qualitative D3 palette (class colors in the reference app). */
 export const CLASS_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'];
 
-/** Plotly's sequential BuGn scale (circuit gate coloring in the reference app). */
-export const BUGN = [
-  'rgb(247,252,253)',
-  'rgb(229,245,249)',
-  'rgb(204,236,230)',
-  'rgb(153,216,201)',
-  'rgb(102,194,164)',
-  'rgb(65,174,118)',
-  'rgb(35,139,69)',
-  'rgb(0,109,44)',
-  'rgb(0,68,27)',
-];
-
 /** Same system font stack as --font in tokens.css (no externally loaded fonts). */
 const PLOT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 

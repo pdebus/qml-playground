@@ -57,6 +57,23 @@ export interface MetricsChunk {
   test: number[];
 }
 
+/**
+ * "Activations" of every layer over the input space, for the circuit view (TF-Playground-style unit maps).
+ * Classification: a size × size grid over [-1, 1]² (row-major, y outer). Regression: `size` points on x.
+ */
+export interface UnitMaps {
+  epoch: number;
+  /** Grid side length (classification) or number of x points (regression). */
+  size: number;
+  points: number;
+  /** Reduced Bloch vector and purity per qubit: [layer][qubit][point][x, y, z, purity]. */
+  bloch: Float32Array;
+  /** Two qubits: tangle per [layer][point]. Empty for one qubit. */
+  tangle: Float32Array;
+  /** Classification: class scores if measured after each layer, [layer][point][class]. Regression: ⟨Z₀⟩ per [layer][point]. */
+  scores: Float32Array;
+}
+
 export interface Snapshot {
   configId: number;
   /** Epoch being displayed. */
@@ -80,6 +97,8 @@ export interface Snapshot {
   curve?: { mean: Float32Array; std: Float32Array };
   /** Current parameters [weights, biases], each laid out as (layer, qubit, 3). */
   theta: Float32Array;
+  /** Per-layer unit maps; may lag a few epochs behind `epoch` while training (refreshed at ~10 Hz). */
+  units: UnitMaps;
 }
 
 export type FromWorker =

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useApp } from '../../state/store';
-import { circuitFigure } from '../../viz/charts';
 import { layerGridColumns, layerGridFigure, LAYER_ROW_HEIGHT } from '../../viz/stateSpace';
 import { usePlot } from '../../viz/plotly';
+import { CircuitView } from '../circuit/CircuitView';
 import { Panel } from '../controls/Controls';
 import { useResolvedTheme, useStateSpaceSpec, useThrottled, useWidth } from '../hooks';
 
@@ -16,12 +16,6 @@ export function ModelPanel() {
   const spec = useStateSpaceSpec();
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
-  const circuit = useMemo(
-    () => (info ? circuitFigure(theme, info.numQubits, info.numLayers, snap?.theta ?? null) : null),
-    [info, theme, snap],
-  );
-  const circuitRef = usePlot(circuit);
-
   const cols = spec ? layerGridColumns(spec.numLayers, width) : 2;
   const layers = useMemo(() => (spec ? layerGridFigure(theme, spec, snap?.layerVis ?? null, cols) : null), [spec, theme, snap, cols]);
   const layersRef = usePlot(layers);
@@ -34,13 +28,17 @@ export function ModelPanel() {
       area="model"
       info={
         <>
-          Data re-uploading circuit: every layer applies Rot(φ, θ, ω) = RZ(ω)RY(θ)RZ(φ) per qubit with angles w·x + b
-          {qubits === 2 ? ', followed by a CNOT that can entangle the qubits' : ''}. Gate colors summarize the trained
-          parameters (hover for details). Below: the test states after every layer.
+          Data re-uploading circuit: every layer applies Rot(φ, θ, ω) = RZ(ω)·RY(θ)·RZ(φ) on each qubit, with each angle
+          set to w·x + b for one input feature{qubits === 2 ? ', followed by a CNOT that can entangle the qubits' : ''}.
+          Re-uploading the data in every layer makes the model more expressive, like depth in a neural network.
         </>
       }
     >
-      <div ref={circuitRef} className={`chart chart-circuit q${qubits}`} />
+      {info ? <CircuitView info={info} snap={snap} theme={theme} /> : <div className="circuit-placeholder" />}
+      <h3 className="subheading">
+        Test states after each layer
+        <span className="muted"> · {qubits === 1 ? 'Bloch sphere' : 'Q-simplex'}</span>
+      </h3>
       <div ref={wrapRef} className="layer-grid-wrap">
         {spec && spec.numLayers > 1 ? (
           <div ref={layersRef} className="chart" style={{ height: rows * LAYER_ROW_HEIGHT }} />

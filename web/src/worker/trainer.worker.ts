@@ -9,6 +9,8 @@ declare const self: DedicatedWorkerGlobalScope;
 const SNAPSHOT_INTERVAL_MS = 33;
 /** Minimum time between Monte Carlo uncertainty refreshes while training. */
 const MC_INTERVAL_MS = 150;
+/** Minimum time between unit-map (circuit view) refreshes while training. */
+const UNITS_INTERVAL_MS = 100;
 /** Time budget per loop slice when training at maximum speed or fast-forwarding. */
 const SLICE_MS = 25;
 
@@ -19,6 +21,7 @@ let fastForwardLeft = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastPost = 0;
 let lastMc = 0;
+let lastUnits = 0;
 
 function send(msg: FromWorker, transfer: Transferable[] = []) {
   self.postMessage(msg, transfer);
@@ -29,10 +32,19 @@ function postSnapshot(force = false) {
   const now = performance.now();
   if (!force && now - lastPost < SNAPSHOT_INTERVAL_MS) return;
   const mc = force || now - lastMc >= MC_INTERVAL_MS;
-  const snap: Snapshot = trainer.snapshot({ mc });
+  const units = force || now - lastUnits >= UNITS_INTERVAL_MS;
+  const snap: Snapshot = trainer.snapshot({ mc, units });
   if (mc) lastMc = now;
+  if (units) lastUnits = now;
   lastPost = now;
-  const transfer: Transferable[] = [snap.layerVis.buffer, snap.predictions.buffer, snap.theta.buffer];
+  const transfer: Transferable[] = [
+    snap.layerVis.buffer,
+    snap.predictions.buffer,
+    snap.theta.buffer,
+    snap.units.bloch.buffer,
+    snap.units.tangle.buffer,
+    snap.units.scores.buffer,
+  ];
   if (snap.decision) transfer.push(snap.decision.buffer);
   send({ type: 'snapshot', snap }, transfer);
 }

@@ -1,6 +1,6 @@
 import { wavyLower, wavyUpper, type ClassificationDataset } from '../data/datasets';
 import type { Figure, Layout, Trace } from './plotly';
-import { BUGN, CLASS_COLORS, baseLayout, type PlotTheme } from './theme';
+import { CLASS_COLORS, baseLayout, type PlotTheme } from './theme';
 
 const HIDDEN = { showticklabels: false, showgrid: false, zeroline: false, range: [-1, 1], fixedrange: true };
 const SQUARE = (t: PlotTheme) => ({
@@ -323,83 +323,3 @@ export function metricsFigure(t: PlotTheme, m: MetricsSeries, regression: boolea
   };
 }
 
-const TWO_PI = 2 * Math.PI;
-const mod2pi = (v: number) => ((v % TWO_PI) + TWO_PI) % TWO_PI;
-
-/** Per-gate summary of the parameters (`compute_combined_metric`): ‖W mod 2π‖ + (‖B‖ mod 2π). */
-export function gateMetrics(theta: ArrayLike<number>, numLayers: number, numQubits: number) {
-  const P = numLayers * numQubits * 3;
-  const out: { combined: number; delta: number; bias: number }[] = [];
-  for (let g = 0; g < numLayers * numQubits; g++) {
-    let dw = 0, nb = 0;
-    for (let j = 0; j < 3; j++) {
-      dw += mod2pi(theta[3 * g + j]) ** 2;
-      nb += theta[P + 3 * g + j] ** 2;
-    }
-    const delta = Math.sqrt(dw);
-    const bias = mod2pi(Math.sqrt(nb));
-    out.push({ combined: delta + bias, delta, bias });
-  }
-  return out;
-}
-
-/** Circuit diagram (`make_quantum_classifier_plot`) with gates colored by their parameter metric. */
-export function circuitFigure(t: PlotTheme, numQubits: 1 | 2, numLayers: number, theta: ArrayLike<number> | null): Figure {
-  const xs = 1.35;
-  const ys = numQubits === 1 ? [0] : [0.75, 0];
-  const metrics = theta ? gateMetrics(theta, numLayers, numQubits) : null;
-  const vmin = metrics ? Math.min(...metrics.map((m) => m.combined)) : 0;
-  const vmax = metrics ? Math.max(...metrics.map((m) => m.combined)) : 1;
-  const data: Trace[] = [];
-  const shapes: Record<string, unknown>[] = [];
-  const xEnd = numLayers * xs + 1;
-
-  for (const y of ys) data.push({ type: 'scatter', mode: 'lines', x: [0, xEnd], y: [y, y], line: { color: t.line, width: 2 }, hoverinfo: 'skip' });
-
-  const hover = { x: [] as number[], y: [] as number[], text: [] as string[] };
-  for (let i = 1; i <= numLayers; i++) {
-    const xg = i * xs;
-    ys.forEach((y, q) => {
-      let color = t.accent;
-      if (metrics) {
-        const m = metrics[(i - 1) * numQubits + q];
-        const norm = (m.combined - vmin) / (vmax - vmin + 1e-8);
-        color = BUGN[Math.min(BUGN.length - 1, Math.max(0, Math.floor(norm * (BUGN.length - 1))))];
-        hover.x.push(xg);
-        hover.y.push(y);
-        hover.text.push(
-          `Layer ${i}, Q${q + 1}<br>Combined metric: ${m.combined.toFixed(2)}<br>Δ_total: ${m.delta.toFixed(2)}<br>Bias phase: ${m.bias.toFixed(2)} rad`,
-        );
-      }
-      const s = 0.2;
-      shapes.push({ type: 'rect', x0: xg - s, y0: y - s, x1: xg + s, y1: y + s, line: { color: t.line }, fillcolor: color });
-    });
-    // The simulation applies CNOT(Q1 → Q2) after every layer, including the last.
-    if (numQubits === 2) {
-      const xc = xg + 0.5;
-      const [cy, ty] = ys;
-      const r = 0.06;
-      shapes.push(
-        { type: 'line', x0: xc, y0: cy, x1: xc, y1: ty - 2 * r, line: { color: t.line } },
-        { type: 'circle', x0: xc - r, y0: cy - r, x1: xc + r, y1: cy + r, line: { color: t.line }, fillcolor: t.line },
-        { type: 'circle', x0: xc - 2 * r, y0: ty - 2 * r, x1: xc + 2 * r, y1: ty + 2 * r, line: { color: t.line } },
-        { type: 'line', x0: xc - 2 * r, y0: ty, x1: xc + 2 * r, y1: ty, line: { color: t.line } },
-      );
-    }
-    data.push({ type: 'scatter', mode: 'text', x: [xg], y: [Math.min(...ys) - 0.42], text: [`L${i}`], hoverinfo: 'skip', textfont: { color: t.muted } });
-  }
-  ys.forEach((y, q) =>
-    data.push({ type: 'scatter', mode: 'text', x: [-0.4], y: [y], text: [`Q${q + 1}`], hoverinfo: 'skip', textfont: { color: t.text } }),
-  );
-  if (metrics) data.push({ type: 'scatter', mode: 'markers', ...hover, marker: { size: 20, opacity: 0 }, hoverinfo: 'text' });
-
-  return {
-    data,
-    layout: {
-      ...baseLayout(t),
-      shapes,
-      xaxis: { visible: false, range: [-1, numLayers * xs + 1.6], fixedrange: true },
-      yaxis: { visible: false, range: numQubits === 1 ? [-0.8, 0.5] : [-0.8, 1.15], fixedrange: true },
-    },
-  };
-}

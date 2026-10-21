@@ -2,12 +2,16 @@ import { createTaskData, fourierCurve, type TaskData } from '../data/datasets';
 import { Rng } from '../data/rng';
 import { QuantumModel, type TrainOptions } from '../model/qmodel';
 import type { Settings } from '../state/settings';
-import { blochVector, visualCoordinates } from '../viz/quantum';
-import type { DataInfo, MetricsChunk, RestoreState, Snapshot } from './protocol';
+import { expvalZ0 } from '../model/losses';
+import { blochVector, reducedBloch, tangle, visualCoordinates } from '../viz/quantum';
+import type { DataInfo, MetricsChunk, RestoreState, Snapshot, UnitMaps } from './protocol';
 
 /** Maximum number of epochs kept for replay (parameters + optimizer state per epoch). */
 export const MAX_HISTORY = 5000;
 const DENSE_POINTS = 400;
+/** Unit-map resolution: grid side for classification, number of x points for regression. */
+export const UNIT_GRID = 24;
+export const UNIT_POINTS_1D = 64;
 
 interface HistoryEntry {
   epoch: number;
@@ -37,6 +41,7 @@ export class Trainer {
   viewEpoch: number | null = null;
   private dense?: { x: Float64Array; y: Float64Array };
   private lastCurve?: { key: string; curve: { mean: Float32Array; std: Float32Array } };
+  private lastUnits?: UnitMaps;
 
   constructor(configId: number, settings: Settings, restore?: RestoreState) {
     this.configId = configId;
@@ -182,7 +187,50 @@ export class Trainer {
    * Builds a snapshot for the displayed epoch. While viewing history the model parameters are temporarily
    * swapped for the recorded ones.
    */
-  snapshot(options: { mc: boolean } = { mc: true }): Snapshot {
+  /** Computes the per-layer unit maps for the current parameters (see `UnitMaps`). */
+  private computeUnits(epoch: number): UnitMaps {
+    const { model, settings } = this;
+    const regression = settings.task === 'regression';
+    const size = regression ? UNIT_POINTS_1D : UNIT_GRID;
+    const points = regression ? size : size * size;
+    const x = new Float64Array(points * (regression ? 1 : 2));
+    if (regression) {
+      for (let i = 0; i < size; i++) x[i] = -1 + (2 * i) / (size - 1);
+    } else {
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const k = r * size + c;
+          x[2 * k] = -1 + (2 * c) / (size - 1);
+          x[2 * k + 1] = -1 + (2 * r) / (size - 1);
+        }
+      }
+    }
+    const L = settings.numLayers;
+    const Q = settings.numQubits;
+    const ss = model.stateSize;
+    const states = model.forwardAll({ n: points, features: regression ? 1 : 2, x, y: new Float64Array(points) });
+    const C = regression ? 1 : model.numClasses;
+    const bloch = new Float32Array(L * Q * points * 4);
+    const tangleOut = new Float32Array(Q === 2 ? L * points : 0);
+    const scores = new Float32Array(L * points * C);
+    const tmp = new Float64Array(Math.max(4, C));
+    for (let l = 0; l < L; l++) {
+      for (let p = 0; p < points; p++) {
+        const so = (p * L + l) * ss;
+        for (let q = 0; q < Q; q++) reducedBloch(states, so, Q, q, bloch, ((l * Q + q) * points + p) * 4);
+        if (Q === 2) tangleOut[l * points + p] = tangle(states, so);
+        if (regression) {
+          scores[l * points + p] = expvalZ0(states, so, model.circuit.dim);
+        } else {
+          model.scores(states, so, tmp);
+          for (let c = 0; c < C; c++) scores[(l * points + p) * C + c] = tmp[c];
+        }
+      }
+    }
+    return { epoch, size, points, bloch, tangle: tangleOut, scores };
+  }
+
+  snapshot(options: { mc: boolean; units?: boolean } = { mc: true }): Snapshot {
     const { model, settings } = this;
     const viewing = this.viewEpoch !== null ? this.entry(this.viewEpoch) : undefined;
     const saved = viewing ? model.theta.slice() : undefined;
@@ -204,6 +252,14 @@ export class Trainer {
       }
       curve = this.lastCurve!.curve;
     }
+    const shownEpoch = viewing?.epoch ?? model.epoch;
+    // Unit maps are the most expensive part after MC; refresh them when asked or when they are missing.
+    if (!this.lastUnits || (this.lastUnits.epoch !== shownEpoch && (options.units ?? true))) {
+      this.lastUnits = this.computeUnits(shownEpoch);
+    }
+    // Send a copy: the snapshot's buffers are transferred to the main thread.
+    const u = this.lastUnits;
+    const units: UnitMaps = { ...u, bloch: u.bloch.slice(), tangle: u.tangle.slice(), scores: u.scores.slice() };
     const theta = Float32Array.from(model.theta);
     if (saved) model.setParams(saved);
 
@@ -219,6 +275,7 @@ export class Trainer {
       gridSize: settings.gridSize,
       curve,
       theta,
+      units,
     };
   }
 }

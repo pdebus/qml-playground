@@ -14,6 +14,48 @@ export function tangle(s: ArrayLike<number>, o = 0): number {
 }
 
 /**
+ * Bloch vector of qubit `q` of a pure 1- or 2-qubit state, i.e. of its reduced density matrix
+ * ρ_q = Tr_other |ψ⟩⟨ψ|. Writes (x, y, z, purity) to `out` at `oo`; purity = (1 + |r|²)/2 is 1 for a
+ * product state and 1/2 when the qubit is maximally entangled with the other one.
+ */
+export function reducedBloch(
+  s: ArrayLike<number>,
+  so: number,
+  numQubits: 1 | 2,
+  q: number,
+  out: Float32Array,
+  oo: number,
+): void {
+  let r00 = 0, r11 = 0, re10 = 0, im10 = 0;
+  if (numQubits === 1) {
+    // ρ10 = b·conj(a)
+    const ar = s[so], ai = s[so + 1], br = s[so + 2], bi = s[so + 3];
+    r00 = ar * ar + ai * ai;
+    r11 = br * br + bi * bi;
+    re10 = br * ar + bi * ai;
+    im10 = bi * ar - br * ai;
+  } else {
+    // Basis index = 2·b0 + b1 (qubit 0 is the most significant bit). For qubit q, pair the amplitudes that
+    // differ only in bit q: ρ10 = Σ_other a(bit q = 1)·conj(a(bit q = 0)).
+    const stride = q === 0 ? 2 : 1;
+    for (const base of q === 0 ? [0, 1] : [0, 2]) {
+      const i0 = so + 2 * base;
+      const i1 = so + 2 * (base + stride);
+      const ar = s[i0], ai = s[i0 + 1], br = s[i1], bi = s[i1 + 1];
+      r00 += ar * ar + ai * ai;
+      r11 += br * br + bi * bi;
+      re10 += br * ar + bi * ai;
+      im10 += bi * ar - br * ai;
+    }
+  }
+  const x = 2 * re10, y = 2 * im10, z = r00 - r11;
+  out[oo] = x;
+  out[oo + 1] = y;
+  out[oo + 2] = z;
+  out[oo + 3] = (1 + x * x + y * y + z * z) / 2;
+}
+
+/**
  * Converts states (sample-major, `layers` states of `stateSize` floats per sample) into 4 visual floats each:
  * one qubit → Bloch (x, y, z, 0); two qubits → Q-simplex (p01, p10, p00, tangle).
  */
