@@ -9,6 +9,7 @@ declare module 'plotly.js/lib/core' {
 }
 
 declare module 'plotly.js/lib/scatter';
+declare module 'plotly.js/lib/bar';
 declare module 'plotly.js/lib/scatter3d';
 declare module 'plotly.js/lib/surface';
 declare module 'plotly.js/lib/mesh3d';

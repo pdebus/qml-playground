@@ -45,7 +45,7 @@ src/model/    losses (fidelity, NLL, MSE on ⟨Z⟩) with ∂ℓ/∂ψ, Adam (to
 src/data/     seeded RNG, dataset generators, single-qubit target states
 src/worker/   Trainer (model + replay history, no DOM deps) and the Web Worker loop / message protocol
 src/state/    Zustand store bridging UI and worker, settings model, URL hash encoding
-src/viz/      Plotly partial bundle + figure builders (Bloch sphere, Q-simplex, metrics, …), unit-map rendering, marching squares
+src/viz/      Plotly partial bundle + figure builders (Bloch sphere, Q-simplex, metrics, …), unit-map rendering, marching squares, DFT
 src/ui/       React panels and controls
 tests/        Vitest suites; fixtures/reference.json is generated from the PyTorch app
 ```
@@ -63,6 +63,10 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
   interpolated) to draw its path in the state plots, its angle on every dial and a crosshair on every unit map.
   Clicking a gate shows w, b, the full-batch gradient (sent with the snapshot at the unit-map cadence) and a
   circular histogram of its angle over the training data.
+- **Output panel.** Classification shows the predicted class (faded by confidence) or, via the selector, one class
+  score: the probability (2 qubits) or the fidelity with the class target (1 qubit). Regression adds the Fourier
+  spectrum |c_k|, k = 0…10, of the model output and the target, a direct DFT on 512 points of t = πx
+  (`src/viz/fourier.ts`).
 - **Replay.** Parameters and Adam state are recorded per epoch, for the last 5000 epochs. Seeking shows a past
   epoch. *Resume from here* truncates the history and continues training from that point.
 - **Sharing.** Settings are kept in the URL hash. *Share trained model* also encodes the displayed parameters

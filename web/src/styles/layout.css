@@ -694,6 +694,9 @@ input[type='range']::-moz-range-thumb {
 .chart-output {
   height: 300px;
 }
+.chart-spectrum {
+  height: 150px;
+}
 .layer-grid-wrap {
   min-width: 0;
 }

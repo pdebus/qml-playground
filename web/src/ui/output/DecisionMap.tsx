@@ -3,7 +3,7 @@ import { useApp } from '../../state/store';
 import type { DataInfo } from '../../worker/protocol';
 import { decisionBoundaries } from '../../viz/contour';
 import type { PlotTheme } from '../../viz/theme';
-import { classColor, classFromScores, cssColor, describeClass, renderGrid, unitPalette } from '../../viz/unitMaps';
+import { classColor, classFromScores, classScoreColor, cssColor, describeClass, renderGrid, unitPalette } from '../../viz/unitMaps';
 import { useWidth } from '../hooks';
 
 const M = { left: 24, right: 6, top: 6, bottom: 22 };
@@ -31,6 +31,8 @@ export function DecisionMap({
   theme,
   followed,
   predictions,
+  view,
+  scoreLabel,
 }: {
   info: DataInfo;
   scores: Float32Array | null;
@@ -40,6 +42,10 @@ export function DecisionMap({
   followed: number | null;
   /** Predicted class per test sample. */
   predictions: Float32Array | null;
+  /** null: predicted class faded by confidence; c: the score of class c. */
+  view: number | null;
+  /** Name of a class score, e.g. "p(class 1)". */
+  scoreLabel: (c: number) => string;
 }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<Hover | null>(null);
@@ -53,11 +59,12 @@ export function DecisionMap({
     () =>
       ready
         ? renderGrid(n, (p) => {
+            if (view !== null) return classScoreColor(pal, view, scores[p * C + view]);
             const { cls, confidence } = classFromScores(scores, p * C, C);
             return classColor(pal, cls, confidence);
           })
         : null,
-    [ready, scores, n, C, pal],
+    [ready, scores, n, C, pal, view],
   );
   const segments = useMemo(() => (ready ? decisionBoundaries(scores, n, C) : []), [ready, scores, n, C]);
 
@@ -112,8 +119,11 @@ export function DecisionMap({
     }
     const c = Math.round(fx * (n - 1));
     const r = Math.round((1 - fy) * (n - 1));
-    const { cls, confidence } = classFromScores(scores, (r * n + c) * C, C);
-    setHover({ x: -1 + 2 * fx, y: 1 - 2 * fy, ...place, title: 'Model output', text: describeClass(cls, confidence) });
+    const p = r * n + c;
+    const { cls, confidence } = classFromScores(scores, p * C, C);
+    const text =
+      view === null ? describeClass(cls, confidence) : `${scoreLabel(view)} = ${scores[p * C + view].toFixed(3)} · predicted class ${cls}`;
+    setHover({ x: -1 + 2 * fx, y: 1 - 2 * fy, ...place, title: 'Model output', text });
   };
 
   return (

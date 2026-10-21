@@ -203,6 +203,41 @@ export function regressionFitFigure(
   };
 }
 
+/** Fourier spectrum |c_k| of the model output and the target, k = 0 … kMax (grouped bars). */
+export function spectrumFigure(t: PlotTheme, target: number[], model: number[] | null): Figure {
+  const k = target.map((_, i) => i);
+  return {
+    data: [
+      {
+        type: 'bar',
+        x: k,
+        y: target,
+        name: 'Target',
+        marker: { color: t.muted },
+        hovertemplate: 'k = %{x}<br>|c_k| = %{y:.3f}<extra>Target</extra>',
+      },
+      {
+        type: 'bar',
+        x: model ? k : [],
+        y: model ?? [],
+        name: 'Model',
+        marker: { color: CLASS_COLORS[0] },
+        hovertemplate: 'k = %{x}<br>|c_k| = %{y:.3f}<extra>Model</extra>',
+      },
+    ],
+    layout: {
+      ...baseLayout(t),
+      barmode: 'group',
+      bargap: 0.25,
+      showlegend: true,
+      legend: { orientation: 'h', x: 1, xanchor: 'right', y: 1, yanchor: 'top', font: { size: 10 } },
+      margin: { l: 30, r: 4, t: 4, b: 30 },
+      xaxis: { dtick: 1, fixedrange: true, title: { text: 'frequency k (in t = πx)', font: { size: 10, color: t.muted } } },
+      yaxis: { gridcolor: t.grid, zeroline: false, rangemode: 'tozero', fixedrange: true },
+    },
+  };
+}
+
 /** Regression residuals on the test grid (`make_regression_results_plot`). */
 export function residualsFigure(
   t: PlotTheme,

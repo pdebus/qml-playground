@@ -108,6 +108,11 @@ export function sequentialColor(pal: UnitPalette, v: number): RGB {
 }
 
 /** Class color faded towards the background where the prediction is unsure, as in TF Playground. */
+/** One class's score v ∈ [0, 1] (probability or fidelity), from neutral to the class color. */
+export function classScoreColor(pal: UnitPalette, cls: number, v: number): RGB {
+  return mix(pal.neutral, pal.classes[cls], Math.max(0, Math.min(1, v)));
+}
+
 export function classColor(pal: UnitPalette, cls: number, confidence: number): RGB {
   return mix(pal.neutral, pal.classes[cls], 0.15 + 0.85 * confidence);
 }
