@@ -3,7 +3,7 @@
 A fully client-side rewrite of the QML Playground. The quantum state-vector simulator, training and all
 visualizations run in the browser, so the app is a static site that can be hosted on GitHub Pages.
 It supports one and two qubits, classification and regression, L1/L2 regularization and Monte Carlo
-uncertainty, the same as the Dash app in `../app`.
+uncertainty, the same as the legacy Dash app in `../legacy`.
 
 ## Development
 
@@ -83,13 +83,13 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
 
 ## Parity with the PyTorch reference
 
-`tools/export_fixtures.py` (repository root) runs the original `app/` modules on fixed inputs and parameters,
+`legacy/tools/export_fixtures.py` runs the original `legacy/app/` modules on fixed inputs and parameters,
 and records per-layer states, losses, gradients (with and without L1/L2), predictions, Adam steps, dataset
 labels, targets and Fourier curves. Regenerate the fixtures after changing the Python reference:
 
 ```bash
-pip install -r requirements.txt
-python tools/export_fixtures.py
+pip install -r legacy/requirements.txt
+python legacy/tools/export_fixtures.py
 ```
 
 The tests compare at float32 precision, because the reference runs in complex64.

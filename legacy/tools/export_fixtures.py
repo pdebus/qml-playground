@@ -1,11 +1,11 @@
 """Export golden test fixtures from the PyTorch reference implementation.
 
 The web app (web/) re-implements the simulator, losses, gradients and Adam in TypeScript. This script runs
-the original modules in app/ on fixed inputs and parameters and writes the results to
+the original modules in legacy/app/ on fixed inputs and parameters and writes the results to
 web/tests/fixtures/reference.json, which the Vitest suite compares against.
 
-Usage (from the repository root, with requirements.txt installed):
-    python tools/export_fixtures.py
+Usage (from the repository root, with legacy/requirements.txt installed):
+    python legacy/tools/export_fixtures.py
 """
 import json
 import sys
@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "legacy" / "app"))
 
 from data import datasets_torch as ds  # noqa: E402
 from models.reuploading_classifier import QuantumReuploadingClassifier  # noqa: E402

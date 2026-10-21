@@ -53,7 +53,7 @@ function readThemeMode(): ThemeMode {
   } catch {
     /* storage unavailable */
   }
-  return 'system';
+  return 'light';
 }
 
 export const useApp = create<AppState>((set, get) => ({
