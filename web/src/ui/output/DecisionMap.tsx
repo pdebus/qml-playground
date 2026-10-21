@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react';
+import { useApp } from '../../state/store';
 import type { DataInfo } from '../../worker/protocol';
 import { decisionBoundaries } from '../../viz/contour';
 import type { PlotTheme } from '../../viz/theme';
@@ -7,12 +8,15 @@ import { useWidth } from '../hooks';
 
 const M = { left: 24, right: 6, top: 6, bottom: 22 };
 const TICKS = [-1, 0, 1];
+/** Hover radius (px) for picking a test sample. */
+const PICK_R = 7;
 
 interface Hover {
   x: number;
   y: number;
   left: number;
   top: number;
+  title: string;
   text: string;
 }
 
@@ -20,9 +24,27 @@ interface Hover {
  * The model output over the whole input space, like TF Playground's output map: the predicted class color,
  * faded where the model is unsure, the decision boundary as a line, and the test samples in their true colors.
  */
-export function DecisionMap({ info, scores, n, theme }: { info: DataInfo; scores: Float32Array | null; n: number; theme: PlotTheme }) {
+export function DecisionMap({
+  info,
+  scores,
+  n,
+  theme,
+  followed,
+  predictions,
+}: {
+  info: DataInfo;
+  scores: Float32Array | null;
+  n: number;
+  theme: PlotTheme;
+  /** Index of the followed test sample. */
+  followed: number | null;
+  /** Predicted class per test sample. */
+  predictions: Float32Array | null;
+}) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<Hover | null>(null);
+  const hoverSample = useApp((s) => s.hoverSample);
+  const pinSample = useApp((s) => s.pinSample);
   const C = info.numClasses;
   const pal = useMemo(() => unitPalette(theme), [theme]);
   const ready = scores !== null && scores.length === n * n * C;
@@ -46,26 +68,54 @@ export function DecisionMap({ info, scores, n, theme }: { info: DataInfo; scores
   const half = size / (n - 1) / 2;
   const path = segments.map(([x0, y0, x1, y1]) => `M${sx(x0).toFixed(1)},${sy(y0).toFixed(1)}L${sx(x1).toFixed(1)},${sy(y1).toFixed(1)}`).join('');
 
-  const onMove = (e: MouseEvent<SVGRectElement>) => {
-    if (!ready) return;
+  const tx = info.testX;
+  const ty = info.testY;
+
+  /** The test sample within PICK_R pixels of the cursor, if any. */
+  const pick = (px: number, py: number): number | null => {
+    let best: number | null = null;
+    let bestD = PICK_R * PICK_R;
+    for (let i = 0; i < ty.length; i++) {
+      const d = (sx(tx[2 * i]) - px) ** 2 + (sy(tx[2 * i + 1]) - py) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  const cursor = (e: MouseEvent<SVGRectElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const fy = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    return { fx, fy, i: pick(M.left + fx * size, M.top + fy * size) };
+  };
+
+  const onMove = (e: MouseEvent<SVGRectElement>) => {
+    if (!ready) return;
+    const { fx, fy, i } = cursor(e);
+    // Keep following the last sample while the cursor stays on the map.
+    if (i !== null) hoverSample(i);
+    const left = M.left + fx * size;
+    const place = { left: left + 180 > width ? left - 170 : left + 12, top: M.top + fy * size + 12 };
+    if (i !== null) {
+      const pred = predictions ? predictions[i] : NaN;
+      setHover({
+        x: tx[2 * i],
+        y: tx[2 * i + 1],
+        ...place,
+        title: `Test sample #${i}`,
+        text: `class ${ty[i]}${Number.isNaN(pred) ? '' : ` → predicted ${pred}${pred === ty[i] ? ' ✓' : ' ✗'}`}`,
+      });
+      return;
+    }
     const c = Math.round(fx * (n - 1));
     const r = Math.round((1 - fy) * (n - 1));
     const { cls, confidence } = classFromScores(scores, (r * n + c) * C, C);
-    const left = M.left + fx * size;
-    setHover({
-      x: -1 + 2 * fx,
-      y: 1 - 2 * fy,
-      left: left + 180 > width ? left - 170 : left + 12,
-      top: M.top + fy * size + 12,
-      text: describeClass(cls, confidence),
-    });
+    setHover({ x: -1 + 2 * fx, y: 1 - 2 * fy, ...place, title: 'Model output', text: describeClass(cls, confidence) });
   };
 
-  const tx = info.testX;
-  const ty = info.testY;
   return (
     <div ref={wrapRef} className="decision-map">
       {width > 0 && (
@@ -95,6 +145,9 @@ export function DecisionMap({ info, scores, n, theme }: { info: DataInfo; scores
               <circle key={i} cx={sx(tx[2 * i])} cy={sy(tx[2 * i + 1])} r={2.4} fill={cssColor(pal.classes[ty[i]])} className="decision-point" />
             ))}
           </g>
+          {followed !== null && followed < ty.length && (
+            <circle cx={sx(tx[2 * followed])} cy={sy(tx[2 * followed + 1])} r={6.5} className="sample-ring" />
+          )}
           <rect x={M.left} y={M.top} width={size} height={size} className="decision-frame" />
           {TICKS.map((v) => (
             <g key={v} className="decision-tick">
@@ -120,13 +173,17 @@ export function DecisionMap({ info, scores, n, theme }: { info: DataInfo; scores
             fill="transparent"
             className="unit-tile"
             onMouseMove={onMove}
-            onMouseLeave={() => setHover(null)}
+            onMouseLeave={() => {
+              setHover(null);
+              hoverSample(null);
+            }}
+            onClick={(e) => pinSample(cursor(e).i)}
           />
         </svg>
       )}
       {hover && (
         <div className="unit-hover" style={{ left: hover.left, top: hover.top }} role="tooltip">
-          <div className="unit-hover-title">Model output</div>
+          <div className="unit-hover-title">{hover.title}</div>
           <div>{hover.text}</div>
           <div className="muted">
             x₁ = {hover.x.toFixed(2)}, x₂ = {hover.y.toFixed(2)}

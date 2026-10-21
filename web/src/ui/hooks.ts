@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Circuit } from '../sim/circuit';
 import { useApp } from '../state/store';
-import { PLOT_THEMES, type PlotTheme, type ResolvedTheme } from '../viz/theme';
-import type { StateSpaceSpec } from '../viz/stateSpace';
+import { CLASS_COLORS, PLOT_THEMES, type PlotTheme, type ResolvedTheme } from '../viz/theme';
+import type { StateHighlight, StateSpaceSpec } from '../viz/stateSpace';
+import { sampleTrace, type SampleTrace } from '../viz/trajectory';
+import type { Snapshot } from '../worker/protocol';
+import type { PlotEvents } from '../viz/plotly';
 
 /** Returns `value`, updated at most every `ms` milliseconds (trailing edge included). */
 export function useThrottled<T>(value: T, ms: number): T {
@@ -88,4 +92,66 @@ export function useWidth<T extends HTMLElement>(): [React.RefObject<T>, number] 
     return () => ro.disconnect();
   }, []);
   return [ref, width];
+}
+
+export interface FollowedSample extends SampleTrace {
+  index: number;
+  pinned: boolean;
+  /** Input features of the sample. */
+  x: number[];
+  /** True label (class index or regression target). */
+  label: number;
+  /** Model prediction in `snap` (class index or ⟨Z⟩), or NaN without a snapshot. */
+  prediction: number;
+}
+
+/** The followed test sample, re-run through the circuit with the parameters of `snap` (see `sampleTrace`). */
+export function useFollowedSample(snap: Snapshot | null): FollowedSample | null {
+  const info = useApp((s) => s.info);
+  const sample = useApp((s) => s.sample);
+  const featIdx = useMemo(
+    () => (info ? new Circuit(info.numQubits, info.numLayers, info.task === 'regression' ? 1 : 2).featIdx : null),
+    [info],
+  );
+  const theta = snap?.theta ?? null;
+  const prediction = sample && snap ? snap.predictions[sample.index] : NaN;
+  return useMemo(() => {
+    if (!info || !featIdx || !theta || !sample || sample.index >= info.testY.length) return null;
+    const F = info.task === 'regression' ? 1 : 2;
+    const x = Array.from(info.testX.subarray(sample.index * F, (sample.index + 1) * F));
+    return {
+      ...sampleTrace(info.numQubits, info.numLayers, featIdx, theta, x),
+      index: sample.index,
+      pinned: sample.pinned,
+      x,
+      label: info.testY[sample.index],
+      prediction,
+    };
+  }, [info, featIdx, theta, sample, prediction]);
+}
+
+/** Plot events that follow (hover) or pin (click) the test sample whose index is the point's customdata. */
+export function useSampleEvents(): PlotEvents {
+  const hoverSample = useApp((s) => s.hoverSample);
+  const pinSample = useApp((s) => s.pinSample);
+  return useMemo(
+    () => ({
+      onHover: (d) => hoverSample(Number(d)),
+      onUnhover: () => hoverSample(null),
+      onClick: (d) => pinSample(Number(d)),
+    }),
+    [hoverSample, pinSample],
+  );
+}
+
+/** The followed sample as a state-space highlight, colored by its true class. */
+export function useStateHighlight(followed: FollowedSample | null): StateHighlight | undefined {
+  const regression = useApp((s) => s.info?.task === 'regression');
+  return useMemo(
+    () =>
+      followed
+        ? { path: followed.path, layerEnd: followed.layerEnd, color: CLASS_COLORS[regression ? 1 : followed.label] }
+        : undefined,
+    [followed, regression],
+  );
 }

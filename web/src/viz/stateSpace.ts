@@ -190,6 +190,47 @@ function background(t: PlotTheme, scene: string, spec: StateSpaceSpec, large: bo
   return spec.numQubits === 1 ? blochBackground(t, scene, spec, large) : tetraBackground(t, scene, spec);
 }
 
+/** The followed sample's path through the state space (see `sampleTrace`). */
+export interface StateHighlight {
+  path: number[][];
+  layerEnd: number[];
+  /** Color of the sample (its true class). */
+  color: string;
+}
+
+/**
+ * Two traces for the followed sample up to the end of `layer`: its path from |0⟩ and its current state.
+ * Always emitted (empty without a sample) so trace indices stay stable across updates.
+ */
+function highlightTraces(t: PlotTheme, scene: string, hl: StateHighlight | undefined, layer: number, markerScale: number): Trace[] {
+  const pts = hl ? hl.path.slice(0, hl.layerEnd[layer] + 1) : [];
+  const end = pts.length ? [pts[pts.length - 1]] : [];
+  const col = (p: number[][], c: number) => p.map((v) => v[c]);
+  return [
+    {
+      type: 'scatter3d',
+      scene,
+      mode: 'lines',
+      x: col(pts, 0),
+      y: col(pts, 1),
+      z: col(pts, 2),
+      line: { color: t.text, width: 4 * markerScale },
+      opacity: 0.85,
+      hoverinfo: 'skip',
+    },
+    {
+      type: 'scatter3d',
+      scene,
+      mode: 'markers',
+      x: col(end, 0),
+      y: col(end, 1),
+      z: col(end, 2),
+      marker: { size: 8 * markerScale, color: hl?.color ?? t.text, line: { color: t.text, width: 2 } },
+      hoverinfo: 'skip',
+    },
+  ];
+}
+
 /** One scatter3d trace per color group for the given layer (port of the clientside state updates). */
 function stateTraces(
   scene: string,
@@ -219,6 +260,8 @@ function stateTraces(
       y,
       z,
       marker: { size, color: CLASS_COLORS[spec.groupColors[g]], opacity: spec.numQubits === 2 ? 0.7 : 0.6, line: { width: 0 } },
+      // Test-sample index, for following a sample on hover.
+      customdata: vis ? Array.from(idx) : [],
       hovertemplate:
         spec.numQubits === 2 ? 'p|01⟩=%{x:.2f}<br>p|10⟩=%{y:.2f}<br>p|00⟩=%{z:.2f}<extra></extra>' : 'x=%{x:.2f}<br>y=%{y:.2f}<br>z=%{z:.2f}<extra></extra>',
     };
@@ -243,10 +286,14 @@ function sceneLayout(spec: StateSpaceSpec, annotations: unknown[], small: boolea
 }
 
 /** Final-layer state plot (`make_state_space_plot`). */
-export function finalStateFigure(t: PlotTheme, spec: StateSpaceSpec, vis: Float32Array | null): Figure {
+export function finalStateFigure(t: PlotTheme, spec: StateSpaceSpec, vis: Float32Array | null, hl?: StateHighlight): Figure {
   const bg = background(t, 'scene', spec, true);
   return {
-    data: [...bg.traces, ...stateTraces('scene', spec, vis, spec.numLayers - 1, 1)],
+    data: [
+      ...bg.traces,
+      ...stateTraces('scene', spec, vis, spec.numLayers - 1, 1),
+      ...highlightTraces(t, 'scene', hl, spec.numLayers - 1, 1),
+    ],
     layout: { ...baseLayout(t), uirevision: 'final', scene: sceneLayout(spec, bg.annotations, false) },
   };
 }
@@ -263,7 +310,13 @@ export function layerGridColumns(numLayers: number, width: number): number {
  * States after every layer except the last (which is the final-state plot), one scene per layer
  * (`make_state_space_model_plot`).
  */
-export function layerGridFigure(t: PlotTheme, spec: StateSpaceSpec, vis: Float32Array | null, cols: number): Figure | null {
+export function layerGridFigure(
+  t: PlotTheme,
+  spec: StateSpaceSpec,
+  vis: Float32Array | null,
+  cols: number,
+  hl?: StateHighlight,
+): Figure | null {
   const panels = spec.numLayers - 1;
   if (panels < 1) return null;
   const rows = Math.ceil(panels / cols);
@@ -279,7 +332,7 @@ export function layerGridFigure(t: PlotTheme, spec: StateSpaceSpec, vis: Float32
       y: [1 - (r + 1) / rows + 0.02, 1 - r / rows - 0.06 / rows],
     };
     const bg = background(t, scene, spec, false);
-    data.push(...bg.traces, ...stateTraces(scene, spec, vis, l, 0.8));
+    data.push(...bg.traces, ...stateTraces(scene, spec, vis, l, 0.8), ...highlightTraces(t, scene, hl, l, 0.8));
     layout[scene] = sceneLayout(spec, bg.annotations, true, domain);
     titles.push({
       text: `Layer ${l + 1}`,

@@ -41,6 +41,7 @@ function postSnapshot(force = false) {
     snap.layerVis.buffer,
     snap.predictions.buffer,
     snap.theta.buffer,
+    snap.grad.buffer,
     snap.units.bloch.buffer,
     snap.units.tangle.buffer,
     snap.units.scores.buffer,

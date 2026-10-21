@@ -6,6 +6,13 @@ import type { MetricsSeries } from '../viz/charts';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 
+/** The test sample followed through the circuit ("follow a sample"). */
+export interface SampleFocus {
+  index: number;
+  /** Pinned by a click: hovering other samples does not change it. */
+  pinned: boolean;
+}
+
 interface AppState {
   settings: Settings;
   playing: boolean;
@@ -15,6 +22,7 @@ interface AppState {
   metrics: MetricsSeries;
   error: string | null;
   themeMode: ThemeMode;
+  sample: SampleFocus | null;
 
   update(patch: Partial<Settings>): void;
   togglePlay(): void;
@@ -26,6 +34,10 @@ interface AppState {
   goLive(): void;
   setThemeMode(mode: ThemeMode): void;
   shareUrl(withParams: boolean): string;
+  /** Follows test sample `index` while hovering (ignored while a sample is pinned); null stops following. */
+  hoverSample(index: number | null): void;
+  /** Pins test sample `index` (toggles if it is already pinned); null clears the selection. */
+  pinSample(index: number | null): void;
 }
 
 const worker = new Worker(new URL('../worker/trainer.worker.ts', import.meta.url), { type: 'module' });
@@ -53,6 +65,7 @@ export const useApp = create<AppState>((set, get) => ({
   metrics: emptyMetrics(),
   error: null,
   themeMode: readThemeMode(),
+  sample: null,
 
   update(patch) {
     const prev = get().settings;
@@ -98,10 +111,20 @@ export const useApp = create<AppState>((set, get) => ({
     url.hash = encodeHash(settings, restore);
     return url.toString();
   },
+  hoverSample(index) {
+    const cur = get().sample;
+    if (cur?.pinned || (cur?.index ?? null) === index) return;
+    set({ sample: index === null ? null : { index, pinned: false } });
+  },
+  pinSample(index) {
+    const cur = get().sample;
+    const unpin = index === null || (cur?.pinned && cur.index === index);
+    set({ sample: unpin ? null : { index, pinned: true } });
+  },
 }));
 
 function configure(settings: Settings, restore?: RestoreState) {
-  useApp.setState({ info: null, snap: null, metrics: emptyMetrics(restore?.epoch ?? 0), error: null });
+  useApp.setState({ info: null, snap: null, sample: null, metrics: emptyMetrics(restore?.epoch ?? 0), error: null });
   post({ type: 'configure', settings, restore });
 }
 

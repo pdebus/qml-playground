@@ -5,7 +5,7 @@ import { residualsFigure, resultsFigure } from '../../viz/charts';
 import { finalStateFigure } from '../../viz/stateSpace';
 import { usePlot } from '../../viz/plotly';
 import { Panel } from '../controls/Controls';
-import { useResolvedTheme, useStateSpaceSpec, useThrottled } from '../hooks';
+import { useFollowedSample, useResolvedTheme, useSampleEvents, useStateSpaceSpec, useStateHighlight, useThrottled } from '../hooks';
 
 export function ResultsPanel() {
   const theme = useResolvedTheme();
@@ -15,16 +15,20 @@ export function ResultsPanel() {
     50,
   );
   const spec = useStateSpaceSpec();
+  const events = useSampleEvents();
+  const followed = useFollowedSample(snap);
+  const hl = useStateHighlight(followed);
+  const index = followed?.index ?? null;
 
-  const finalFig = useMemo(() => (spec ? finalStateFigure(theme, spec, snap?.layerVis ?? null) : null), [spec, theme, snap]);
-  const finalRef = usePlot(finalFig);
+  const finalFig = useMemo(() => (spec ? finalStateFigure(theme, spec, snap?.layerVis ?? null, hl) : null), [spec, theme, snap, hl]);
+  const finalRef = usePlot(finalFig, events);
 
   const testFig = useMemo(() => {
     if (!info) return null;
-    if (info.regression) return residualsFigure(theme, info.testX, info.testY, snap?.predictions ?? null);
-    return resultsFigure(theme, info.dataset as ClassificationDataset, info.testX, info.testY, snap?.predictions ?? null, info.numClasses);
-  }, [info, theme, snap]);
-  const testRef = usePlot(testFig);
+    if (info.regression) return residualsFigure(theme, info.testX, info.testY, snap?.predictions ?? null, index);
+    return resultsFigure(theme, info.dataset as ClassificationDataset, info.testX, info.testY, snap?.predictions ?? null, info.numClasses, index);
+  }, [info, theme, snap, index]);
+  const testRef = usePlot(testFig, events);
 
   const regression = info?.task === 'regression';
   const qubits = info?.numQubits ?? 1;

@@ -97,6 +97,11 @@ export interface Snapshot {
   curve?: { mean: Float32Array; std: Float32Array };
   /** Current parameters [weights, biases], each laid out as (layer, qubit, 3). */
   theta: Float32Array;
+  /**
+   * Full-batch gradient ∂L/∂θ over the training set (incl. regularization), same layout as `theta`.
+   * Refreshed together with the unit maps, so it may lag a few epochs behind while training.
+   */
+  grad: Float32Array;
   /** Per-layer unit maps; may lag a few epochs behind `epoch` while training (refreshed at ~10 Hz). */
   units: UnitMaps;
 }

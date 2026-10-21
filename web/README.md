@@ -58,6 +58,11 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
   evaluates train and test sets and posts snapshots at most every ~33 ms, using transferable typed arrays.
   Heavy charts throttle their own redraws. Plotly's `react` diffs figures, and a constant `uirevision`
   keeps the camera you have rotated to.
+- **Follow a sample, gate details.** Hovering a test point (Output, Results, Layer states) follows it; a click pins it.
+  The main thread re-runs that one sample with the snapshot's θ (`src/viz/trajectory.ts`, every sub-rotation
+  interpolated) to draw its path in the state plots, its angle on every dial and a crosshair on every unit map.
+  Clicking a gate shows w, b, the full-batch gradient (sent with the snapshot at the unit-map cadence) and a
+  circular histogram of its angle over the training data.
 - **Replay.** Parameters and Adam state are recorded per epoch, for the last 5000 epochs. Seeking shows a past
   epoch. *Resume from here* truncates the history and continues training from that point.
 - **Sharing.** Settings are kept in the URL hash. *Share trained model* also encodes the displayed parameters

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useApp, type ThemeMode } from '../state/store';
 import { Icon } from './controls/Controls';
 import { useResolvedTheme } from './hooks';
@@ -21,6 +22,16 @@ export function App() {
   const themeMode = useApp((s) => s.themeMode);
   const setThemeMode = useApp((s) => s.setThemeMode);
   const error = useApp((s) => s.error);
+  const pinSample = useApp((s) => s.pinSample);
+
+  // Esc stops following a sample.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') pinSample(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pinSample]);
 
   return (
     <div className="app">

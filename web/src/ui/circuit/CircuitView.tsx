@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Circuit } from '../../sim/circuit';
 import type { DataInfo, Snapshot, UnitMaps } from '../../worker/protocol';
 import type { PlotTheme } from '../../viz/theme';
@@ -22,7 +22,8 @@ import {
   type UnitMode,
 } from '../../viz/unitMaps';
 import { InfoTip, Segmented } from '../controls/Controls';
-import { useWidth } from '../hooks';
+import { useFollowedSample, useWidth, type FollowedSample } from '../hooks';
+import { GateCard, type GateRef } from './GateCard';
 
 const SUB_GATES = ['RZ', 'RY', 'RZ'] as const;
 const ANGLE_NAMES = ['φ', 'θ', 'ω'] as const;
@@ -126,7 +127,8 @@ const wrapAngle = (a: number) => ((((a + Math.PI) % TAU) + TAU) % TAU) - Math.PI
  * The angle dial of one sub-gate: the needle is the bias b, the wedge is the range of angles w·x + b that
  * the data sweeps for x ∈ [-1, 1]. A full disc plus a badge means more than one full turn.
  */
-function Dial({ cx, cy, r, w, b }: { cx: number; cy: number; r: number; w: number; b: number }) {
+function Dial({ cx, cy, r, w, b, sample }: { cx: number; cy: number; r: number; w: number; b: number; sample?: number }) {
+  const marker = sample === undefined ? null : polar(cx, cy, r, sample);
   const span = Math.abs(w);
   const turns = span / Math.PI; // 2|w| / 2π
   const color = w >= 0 ? POSITIVE : NEGATIVE;
@@ -141,6 +143,7 @@ function Dial({ cx, cy, r, w, b }: { cx: number; cy: number; r: number; w: numbe
       )}
       <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="var(--text)" strokeWidth={1.6} strokeLinecap="round" />
       <circle cx={cx} cy={cy} r={1.6} fill="var(--text)" />
+      {marker && <circle cx={marker[0]} cy={marker[1]} r={2.6} className="dial-sample" />}
       {turns >= 1 && (
         <text x={cx + r - 1} y={cy - r + 3} className="dial-badge" textAnchor="middle">
           ×{turns.toFixed(turns < 10 ? 1 : 0)}
@@ -168,7 +171,24 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   const [compactChoice, setCompact] = useState<boolean | null>(null);
   const compact = compactChoice ?? info.numLayers > 8;
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [gate, setGate] = useState<(GateRef & { left: number; top: number }) | null>(null);
   const [rowsRef, width] = useWidth<HTMLDivElement>();
+  const followed = useFollowedSample(snap);
+
+  useEffect(() => {
+    if (!gate) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setGate(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [gate]);
+  // A new configuration may not have the selected gate any more.
+  const [gateInfo, setGateInfo] = useState(info);
+  if (gateInfo !== info) {
+    setGateInfo(info);
+    setGate(null);
+  }
 
   const regression = info.task === 'regression';
   const Q = info.numQubits;
@@ -215,6 +235,37 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
 
   const featureName = (f: number) => (regression ? 'x' : FEATURE_NAMES[f]);
 
+  /** Opens (or toggles) the detail card of a sub-gate below it. */
+  const openGate = (e: MouseEvent<SVGGElement> | KeyboardEvent<SVGGElement>, ref: GateRef) => {
+    if (gate && gate.l === ref.l && gate.q === ref.q && gate.j === ref.j) {
+      setGate(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const wrap = (e.currentTarget.closest('.circuit') as HTMLElement).getBoundingClientRect();
+    const cardW = Math.min(320, wrap.width);
+    const left = Math.min(wrap.width - cardW, Math.max(0, rect.left - wrap.left + rect.width / 2 - cardW / 2));
+    setGate({ ...ref, left, top: rect.bottom - wrap.top + 6 });
+  };
+
+  /** Crosshair at the followed sample's position on a unit-map tile with `n` grid points per side. */
+  const crosshair = (x: number, y: number, size: number, n: number) => {
+    if (!followed) return null;
+    // Grid values sit on the pixel centers of the rendered tile.
+    const frac = (v: number) => (((v + 1) / 2) * (n - 1) + 0.5) / n;
+    const px = x + frac(followed.x[0]) * size;
+    if (regression) return <line x1={px} x2={px} y1={y} y2={y + size} className="sample-cross" />;
+    const py = y + (1 - frac(followed.x[1])) * size;
+    return (
+      <g pointerEvents="none">
+        <line x1={x} x2={x + size} y1={py} y2={py} className="sample-cross" />
+        <line x1={px} x2={px} y1={y} y2={y + size} className="sample-cross" />
+        <circle cx={px} cy={py} r={3} className="sample-ring" />
+      </g>
+    );
+  };
+  const unitN = units?.size ?? (regression ? 64 : 24);
+
   /** Everything belonging to layer `l`, drawn as the i-th column of its row. */
   const layerColumn = (l: number, i: number) => (
     <g key={l}>
@@ -251,15 +302,27 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
                 strokeOpacity={0.25 + 0.75 * strength}
               />
               <circle cx={cx} cy={busY} r={1.5 + strength * 1.5} fill={color} />
-              <g className="gate">
-                <title>{title}</title>
+              <g
+                className={`gate${gate && gate.l === l && gate.q === q && gate.j === j ? ' selected' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`Layer ${l + 1}, Q${q + 1}, ${name}(${ANGLE_NAMES[j]}): details`}
+                onClick={(e) => openGate(e, { l, q, j })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openGate(e, { l, q, j });
+                  }
+                }}
+              >
+                <title>{`${title}\nClick for details.`}</title>
                 <rect x={x} y={top} width={g.gateW} height={g.gateH} rx={6} className="gate-box" />
                 {g.labels && (
                   <text x={cx} y={top + 11} textAnchor="middle" className="gate-name">
                     {name}
                   </text>
                 )}
-                <Dial cx={cx} cy={g.labels ? cy + 1 : cy} r={g.dialR} w={w} b={b} />
+                <Dial cx={cx} cy={g.labels ? cy + 1 : cy} r={g.dialR} w={w} b={b} sample={followed?.angles[k]} />
                 {g.labels && (
                   <text x={cx} y={bottom - 4} textAnchor="middle" className="gate-feature">
                     {featureName(f)}
@@ -297,6 +360,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
               {...tileProps('unit', l, q, img)}
             />
             <rect x={g.tileX(i)} y={y} width={g.tile} height={g.tile} className="unit-frame" pointerEvents="none" />
+            {crosshair(g.tileX(i), y, g.tile, unitN)}
           </g>
         ) : null;
       })}
@@ -320,6 +384,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
             className="unit-frame dashed"
             pointerEvents="none"
           />
+          {crosshair(g.tileX(i) + 6, (g.wireY(0) + g.wireY(1)) / 2 - (g.tile - 12) / 2, g.tile - 12, unitN)}
         </g>
       )}
       <text
@@ -355,6 +420,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           {...tileProps('input', 0, f, inputImages[f])}
         />
         <rect x={x} y={y} width={g.tile} height={g.tile} className="unit-frame" pointerEvents="none" />
+        {crosshair(x, y, g.tile, regression ? 64 : 24)}
         <text x={x - 6} y={y + g.tile / 2 + 4} textAnchor="end" className="circuit-label strong">
           {featureName(f)}
         </text>
@@ -491,6 +557,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
         {width > 0 && rows.map(renderRow)}
       </div>
       {hover && units && <HoverCard hover={hover} units={units} info={info} mode={effectiveMode} />}
+      {gate && <GateDetails gate={gate} info={info} snap={snap} featIdx={featIdx} followed={followed} onClose={() => setGate(null)} />}
 
       <p className="legend-note muted">
         <b>Dial</b>: needle = bias b, wedge = angles w·x + b swept by the data (<span style={{ color: POSITIVE }}>w &gt; 0</span>,{' '}
@@ -502,6 +569,48 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
         </InfoTip>
       </p>
     </div>
+  );
+}
+
+/** Gate card for the selected sub-gate, fed from the snapshot and the training data. */
+function GateDetails({
+  gate,
+  info,
+  snap,
+  featIdx,
+  followed,
+  onClose,
+}: {
+  gate: GateRef & { left: number; top: number };
+  info: DataInfo;
+  snap: Snapshot | null;
+  featIdx: Int32Array;
+  followed: FollowedSample | null;
+  onClose: () => void;
+}) {
+  const regression = info.task === 'regression';
+  const F = regression ? 1 : 2;
+  const P = info.numLayers * info.numQubits * 3;
+  const k = (gate.l * info.numQubits + gate.q) * 3 + gate.j;
+  const f = featIdx[k];
+  const values = useMemo(() => info.trainX.filter((_, i) => i % F === f), [info, F, f]);
+  return (
+    <GateCard
+      gate={gate}
+      numQubits={info.numQubits}
+      numLayers={info.numLayers}
+      feature={regression ? 'x' : FEATURE_NAMES[f]}
+      values={values}
+      w={snap ? snap.theta[k] : 0}
+      b={snap ? snap.theta[P + k] : 0}
+      gw={snap ? snap.grad[k] : null}
+      gb={snap ? snap.grad[P + k] : null}
+      sampleAngle={followed ? followed.angles[k] : null}
+      readoutIsZ={regression || info.numQubits === 2}
+      left={gate.left}
+      top={gate.top}
+      onClose={onClose}
+    />
   );
 }
 

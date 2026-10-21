@@ -3,8 +3,8 @@ import { useApp } from '../../state/store';
 import { layerGridColumns, layerGridFigure, LAYER_ROW_HEIGHT } from '../../viz/stateSpace';
 import { usePlot } from '../../viz/plotly';
 import { CircuitView } from '../circuit/CircuitView';
-import { Panel } from '../controls/Controls';
-import { useResolvedTheme, useStateSpaceSpec, useThrottled, useWidth } from '../hooks';
+import { Icon, IconButton, Panel } from '../controls/Controls';
+import { useFollowedSample, useResolvedTheme, useSampleEvents, useStateHighlight, useStateSpaceSpec, useThrottled, useWidth } from '../hooks';
 
 /** Full-width circuit pane: the interpretable model view. */
 export function CircuitPanel() {
@@ -20,6 +20,7 @@ export function CircuitPanel() {
     <Panel
       title="Circuit"
       area="circuit"
+      actions={<FollowBadge />}
       info={
         <>
           Data re-uploading circuit: every layer applies Rot(φ, θ, ω) = RZ(ω)·RY(θ)·RZ(φ) on each qubit, with each angle
@@ -30,6 +31,33 @@ export function CircuitPanel() {
     >
       {info ? <CircuitView info={info} snap={snap} theme={theme} /> : <div className="circuit-placeholder" />}
     </Panel>
+  );
+}
+
+/** Which test sample is followed through the circuit, with a button to stop following it. */
+function FollowBadge() {
+  const info = useApp((s) => s.info);
+  const sample = useApp((s) => s.sample);
+  const prediction = useApp((s) => (s.sample && s.snap ? s.snap.predictions[s.sample.index] : NaN));
+  const pinSample = useApp((s) => s.pinSample);
+  if (!info) return null;
+  if (!sample) return <span className="follow-hint muted">Hover a test point in Output or Results to follow it</span>;
+  const i = sample.index;
+  const y = info.testY[i];
+  let text: string;
+  if (info.task === 'regression') {
+    text = `x = ${info.testX[i].toFixed(2)} · y = ${y.toFixed(2)}${Number.isNaN(prediction) ? '' : ` · ⟨Z⟩ = ${prediction.toFixed(2)}`}`;
+  } else {
+    const verdict = Number.isNaN(prediction) ? '' : ` → ${prediction} ${prediction === y ? '✓' : '✗'}`;
+    text = `class ${y}${verdict}`;
+  }
+  return (
+    <span className={`follow-badge${sample.pinned ? ' pinned' : ''}`} title={sample.pinned ? 'Pinned (click the point again or press Esc to release)' : 'Click the point to pin it'}>
+      {sample.pinned && <Icon name="pin" size={12} />}
+      <b>Sample #{i}</b>
+      <span>{text}</span>
+      {sample.pinned && <IconButton icon="close" label="Stop following this sample" variant="small" onClick={() => pinSample(null)} />}
+    </span>
   );
 }
 
@@ -45,8 +73,9 @@ export function LayerStatesPanel() {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
 
   const cols = spec ? layerGridColumns(spec.numLayers, width) : 2;
-  const layers = useMemo(() => (spec ? layerGridFigure(theme, spec, snap?.layerVis ?? null, cols) : null), [spec, theme, snap, cols]);
-  const layersRef = usePlot(layers);
+  const hl = useStateHighlight(useFollowedSample(snap));
+  const layers = useMemo(() => (spec ? layerGridFigure(theme, spec, snap?.layerVis ?? null, cols, hl) : null), [spec, theme, snap, cols, hl]);
+  const layersRef = usePlot(layers, useSampleEvents());
   const rows = spec ? Math.ceil((spec.numLayers - 1) / cols) : 0;
   const qubits = info?.numQubits ?? 1;
 

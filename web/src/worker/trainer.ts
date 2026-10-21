@@ -42,11 +42,14 @@ export class Trainer {
   private dense?: { x: Float64Array; y: Float64Array };
   private lastCurve?: { key: string; curve: { mean: Float32Array; std: Float32Array } };
   private lastUnits?: UnitMaps;
+  private lastGrad?: { key: string; grad: Float32Array };
+  private readonly trainIdx: Int32Array;
 
   constructor(configId: number, settings: Settings, restore?: RestoreState) {
     this.configId = configId;
     this.settings = settings;
     this.data = createTaskData(settings.task, settings.dataset, settings.seed);
+    this.trainIdx = Int32Array.from({ length: this.data.train.n }, (_, i) => i);
     this.model = new QuantumModel({
       task: settings.task,
       dataset: settings.dataset,
@@ -257,6 +260,13 @@ export class Trainer {
     if (!this.lastUnits || (this.lastUnits.epoch !== shownEpoch && (options.units ?? true))) {
       this.lastUnits = this.computeUnits(shownEpoch);
     }
+    // The full-batch gradient is refreshed at the same cadence as the unit maps.
+    const { regType, regStrength } = settings;
+    const gradKey = `${shownEpoch}|${regType}|${regStrength}`;
+    if (!this.lastGrad || (this.lastGrad.key !== gradKey && (options.units ?? true))) {
+      model.lossAndGrad(this.data.train, this.trainIdx, 0, this.data.train.n, this.trainOptions);
+      this.lastGrad = { key: gradKey, grad: Float32Array.from(model.gradient) };
+    }
     // Send a copy: the snapshot's buffers are transferred to the main thread.
     const u = this.lastUnits;
     const units: UnitMaps = { ...u, bloch: u.bloch.slice(), tangle: u.tangle.slice(), scores: u.scores.slice() };
@@ -275,6 +285,7 @@ export class Trainer {
       gridSize: settings.gridSize,
       curve,
       theta,
+      grad: this.lastGrad.grad.slice(),
       units,
     };
   }

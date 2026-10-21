@@ -8,16 +8,31 @@ function axisFrame(t: PlotTheme, xref = 'x', yref = 'y') {
   return { type: 'rect', xref, yref, x0: -1, y0: -1, x1: 1, y1: 1, line: { color: t.grid, width: 1 }, layer: 'below' };
 }
 
+/** Points grouped by label; `customdata` is the sample index. */
 function split(x: Float64Array, labels: ArrayLike<number>, numClasses: number) {
-  const out = Array.from({ length: numClasses }, () => ({ x: [] as number[], y: [] as number[] }));
+  const out = Array.from({ length: numClasses }, () => ({ x: [] as number[], y: [] as number[], customdata: [] as number[] }));
   for (let i = 0; i < labels.length; i++) {
     const c = labels[i];
     if (c >= 0 && c < numClasses) {
       out[c].x.push(x[2 * i]);
       out[c].y.push(x[2 * i + 1]);
+      out[c].customdata.push(i);
     }
   }
   return out;
+}
+
+/** Ring around the followed sample (always emitted, empty without one, to keep trace indices stable). */
+function ringTrace(t: PlotTheme, x: number[], y: number[], axes: Trace = {}): Trace {
+  return {
+    type: 'scatter',
+    mode: 'markers',
+    x,
+    y,
+    ...axes,
+    marker: { size: 13, color: 'rgba(0,0,0,0)', line: { color: t.text, width: 2 } },
+    hoverinfo: 'skip',
+  };
 }
 
 function regressionAxes(t: PlotTheme): Layout {
@@ -88,28 +103,35 @@ export function resultsFigure(
   labels: Float64Array,
   predictions: Float32Array | null,
   numClasses: number,
+  highlight: number | null = null,
 ): Figure {
   const data: Trace[] = [];
+  // hoverinfo 'none' (not 'skip') keeps hover events for following a sample, without a label.
   if (predictions) {
     split(x, predictions, numClasses).forEach((p, c) =>
-      data.push({ type: 'scatter', mode: 'markers', ...p, marker: { color: CLASS_COLORS[c], size: 4 }, hoverinfo: 'skip' }),
+      data.push({ type: 'scatter', mode: 'markers', ...p, marker: { color: CLASS_COLORS[c], size: 4 }, hoverinfo: 'none' }),
     );
-    const wrong = { x: [] as number[], y: [] as number[] };
-    const right = { x: [] as number[], y: [] as number[] };
+    const wrong = { x: [] as number[], y: [] as number[], customdata: [] as number[] };
+    const right = { x: [] as number[], y: [] as number[], customdata: [] as number[] };
     for (let i = 0; i < labels.length; i++) {
       const target = predictions[i] === labels[i] ? right : wrong;
       target.x.push(x[2 * i]);
       target.y.push(x[2 * i + 1]);
+      target.customdata.push(i);
     }
     data.push(
-      { type: 'scatter', mode: 'markers', xaxis: 'x2', yaxis: 'y2', ...wrong, marker: { color: t.wrong, size: 4 }, hoverinfo: 'skip' },
-      { type: 'scatter', mode: 'markers', xaxis: 'x2', yaxis: 'y2', ...right, marker: { color: t.right, size: 4 }, hoverinfo: 'skip' },
+      { type: 'scatter', mode: 'markers', xaxis: 'x2', yaxis: 'y2', ...wrong, marker: { color: t.wrong, size: 4 }, hoverinfo: 'none' },
+      { type: 'scatter', mode: 'markers', xaxis: 'x2', yaxis: 'y2', ...right, marker: { color: t.right, size: 4 }, hoverinfo: 'none' },
     );
   }
+  const hx = highlight === null ? [] : [x[2 * highlight]];
+  const hy = highlight === null ? [] : [x[2 * highlight + 1]];
+  data.push(ringTrace(t, hx, hy), ringTrace(t, hx, hy, { xaxis: 'x2', yaxis: 'y2' }));
   return {
     data,
     layout: {
       ...baseLayout(t),
+      hovermode: 'closest',
       margin: { l: 0, r: 0, t: 18, b: 0 },
       xaxis: { ...HIDDEN, domain: [0, 0.48] },
       yaxis: { ...HIDDEN },
@@ -137,6 +159,7 @@ export function regressionFitFigure(
   curve: { mean: Float32Array; std: Float32Array } | null,
   trainX: Float64Array,
   trainY: Float64Array,
+  highlight: { x: number; y: number } | null = null,
 ): Figure {
   const xs = Array.from(denseX);
   const mean = curve ? Array.from(curve.mean) : [];
@@ -174,13 +197,21 @@ export function regressionFitFigure(
         name: 'Train samples',
         marker: { size: 5, color: CLASS_COLORS[1], symbol: 'circle-open' },
       },
+      ringTrace(t, highlight ? [highlight.x] : [], highlight ? [highlight.y] : []),
     ],
     layout: regressionAxes(t),
   };
 }
 
 /** Regression residuals on the test grid (`make_regression_results_plot`). */
-export function residualsFigure(t: PlotTheme, x: Float64Array, y: Float64Array, predictions: Float32Array | null): Figure {
+export function residualsFigure(
+  t: PlotTheme,
+  x: Float64Array,
+  y: Float64Array,
+  predictions: Float32Array | null,
+  highlight: number | null = null,
+): Figure {
+  const on = predictions !== null && highlight !== null;
   return {
     data: [
       {
@@ -188,12 +219,15 @@ export function residualsFigure(t: PlotTheme, x: Float64Array, y: Float64Array, 
         mode: 'markers',
         x: predictions ? Array.from(x) : [],
         y: predictions ? Array.from(predictions, (p, i) => p - y[i]) : [],
+        customdata: predictions ? Array.from(x, (_, i) => i) : [],
         marker: { size: 4, color: t.wrong },
         hovertemplate: 'x=%{x:.2f}<br>residual=%{y:.3f}<extra></extra>',
       },
+      ringTrace(t, on ? [x[highlight]] : [], on ? [predictions[highlight] - y[highlight]] : []),
     ],
     layout: {
       ...regressionAxes(t),
+      hovermode: 'closest',
       yaxis: { range: [-2, 2], gridcolor: t.grid, zerolinecolor: t.muted, fixedrange: true },
       annotations: [
         { text: 'Residuals (test)', x: 0.02, y: 0.98, xref: 'paper', yref: 'paper', xanchor: 'left', yanchor: 'top', showarrow: false, font: { size: 11, color: t.muted } },
