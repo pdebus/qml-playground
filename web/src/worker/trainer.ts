@@ -13,6 +13,15 @@ const DENSE_POINTS = 400;
 export const UNIT_GRID = 24;
 export const UNIT_POINTS_1D = 64;
 
+/** Mean tangle over all samples after each layer (states sample-major, `layers` states per sample). */
+export function meanTangle(states: Float64Array, n: number, layers: number, stateSize: number): number[] {
+  const out = new Array<number>(layers).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let l = 0; l < layers; l++) out[l] += tangle(states, (i * layers + l) * stateSize);
+  }
+  return out.map((v) => v / n);
+}
+
 interface HistoryEntry {
   epoch: number;
   theta: Float32Array;
@@ -34,7 +43,13 @@ export class Trainer {
   private rng: Rng;
   private mcRng: Rng;
   private history: HistoryEntry[] = [];
-  private metrics = { loss: [] as number[], train: [] as number[], test: [] as number[] };
+  private metrics = {
+    loss: [] as number[],
+    train: [] as number[],
+    test: [] as number[],
+    gradNorm: [] as number[][],
+    tangle: [] as number[][],
+  };
   /** First metrics index not yet sent to the main thread. */
   private unsentFrom = 0;
   /** Epoch currently displayed; null while following the latest epoch. */
@@ -68,7 +83,7 @@ export class Trainer {
       const [x, y] = fourierCurve(settings.dataset, DENSE_POINTS);
       this.dense = { x, y };
     }
-    this.record();
+    this.record(false);
   }
 
   get latestEpoch(): number {
@@ -116,14 +131,20 @@ export class Trainer {
     };
   }
 
-  /** Evaluates the current parameters and appends metrics + history for the current epoch. */
-  private record(): void {
+  /**
+   * Evaluates the current parameters and appends metrics + history for the current epoch.
+   * `trained`: the epoch was just trained, so the model's epoch gradient norms belong to it.
+   */
+  private record(trained = true): void {
     const train = this.model.evaluate(this.data.train);
     const test = this.model.evaluate(this.data.test);
     const isReg = this.settings.task === 'regression';
+    const L = this.settings.numLayers;
     this.metrics.loss.push(train.loss);
     this.metrics.train.push(isReg ? train.loss : train.accuracy);
     this.metrics.test.push(isReg ? test.loss : test.accuracy);
+    this.metrics.gradNorm.push(trained ? Array.from(this.model.epochGradNorms) : new Array<number>(L).fill(NaN));
+    this.metrics.tangle.push(this.settings.numQubits === 2 ? meanTangle(test.states, this.data.test.n, L, this.model.stateSize) : []);
     const a = this.model.adam;
     this.history.push({
       epoch: this.model.epoch,
@@ -166,6 +187,8 @@ export class Trainer {
     this.metrics.loss.length = keep;
     this.metrics.train.length = keep;
     this.metrics.test.length = keep;
+    this.metrics.gradNorm.length = keep;
+    this.metrics.tangle.length = keep;
     this.unsentFrom = Math.min(this.unsentFrom, keep);
   }
 
@@ -178,6 +201,8 @@ export class Trainer {
       loss: this.metrics.loss.slice(from),
       train: this.metrics.train.slice(from),
       test: this.metrics.test.slice(from),
+      gradNorm: this.metrics.gradNorm.slice(from),
+      tangle: this.metrics.tangle.slice(from),
     };
   }
 

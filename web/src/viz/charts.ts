@@ -1,6 +1,7 @@
 import { wavyLower, wavyUpper, type ClassificationDataset } from '../data/datasets';
 import type { Figure, Layout, Trace } from './plotly';
 import { CLASS_COLORS, baseLayout, type PlotTheme } from './theme';
+import { cssColor, unitPalette } from './unitMaps';
 
 const HIDDEN = { showticklabels: false, showgrid: false, zeroline: false, range: [-1, 1], fixedrange: true };
 
@@ -276,6 +277,91 @@ export interface MetricsSeries {
   loss: number[];
   train: number[];
   test: number[];
+  gradNorm: number[][];
+  tangle: number[][];
+}
+
+/** Maximum number of heatmap columns; longer histories are averaged into bins of epochs. */
+const HEATMAP_COLUMNS = 300;
+
+/**
+ * Per-layer diagnostics over the training history as an epoch × layer heatmap: gradient norm (log scale)
+ * or mean tangle. Layer 1 is at the top, as in reading order through the circuit.
+ */
+export function layerHeatmapFigure(t: PlotTheme, m: MetricsSeries, kind: 'grad' | 'tangle', viewEpoch: number | null): Figure {
+  const rows = kind === 'grad' ? m.gradNorm : m.tangle;
+  const n = rows.length;
+  const L = n ? rows[n - 1].length : 0;
+  const bin = Math.max(1, Math.ceil(n / HEATMAP_COLUMNS));
+  const cols = Math.ceil(n / bin);
+  const x: number[] = [];
+  const raw: number[][] = Array.from({ length: L }, () => []);
+  for (let c = 0; c < cols; c++) {
+    const from = c * bin;
+    const to = Math.min(n, from + bin);
+    x.push(m.base + (from + to - 1) / 2);
+    for (let l = 0; l < L; l++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let e = from; e < to; e++) {
+        const v = rows[e][l];
+        if (v !== undefined && Number.isFinite(v)) {
+          sum += v;
+          cnt++;
+        }
+      }
+      raw[l].push(cnt ? sum / cnt : NaN);
+    }
+  }
+  const grad = kind === 'grad';
+  const z = grad ? raw.map((r) => r.map((v) => (v > 0 ? Math.log10(v) : NaN))) : raw;
+  const finite = z.flat().filter(Number.isFinite);
+  const lo = grad && finite.length ? Math.floor(Math.min(...finite)) : 0;
+  const hi = grad && finite.length ? Math.ceil(Math.max(...finite)) : 1;
+  const powers = grad ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i) : [];
+  const pal = unitPalette(t);
+  return {
+    data: [
+      {
+        type: 'heatmap',
+        x,
+        y: Array.from({ length: L }, (_, l) => l + 1),
+        z: z.map((r) => r.map((v) => (Number.isFinite(v) ? v : null))),
+        customdata: raw,
+        zmin: grad ? lo : 0,
+        zmax: grad ? Math.max(hi, lo + 1) : 1,
+        colorscale: grad
+          ? 'Viridis'
+          : [
+              [0, cssColor(pal.neutral)],
+              [1, cssColor(pal.sequential)],
+            ],
+        colorbar: {
+          thickness: 8,
+          len: 1,
+          outlinewidth: 0,
+          tickfont: { size: 9 },
+          ...(grad ? { tickvals: powers, ticktext: powers.map((p) => `1e${p}`) } : {}),
+        },
+        hovertemplate: grad
+          ? 'epoch %{x:.0f}<br>layer %{y}<br>‖∂L/∂θ‖ = %{customdata:.2e}<extra></extra>'
+          : 'epoch %{x:.0f}<br>layer %{y}<br>mean tangle = %{customdata:.3f}<extra></extra>',
+        xgap: 0,
+        ygap: L > 1 ? 1 : 0,
+      },
+    ],
+    layout: {
+      ...baseLayout(t),
+      margin: { l: 30, r: 6, t: 4, b: 22 },
+      xaxis: { gridcolor: t.grid, zeroline: false, fixedrange: true },
+      yaxis: { autorange: 'reversed', dtick: L > 8 ? 2 : 1, zeroline: false, showgrid: false, fixedrange: true, title: { text: '' } },
+      annotations: [],
+      shapes:
+        viewEpoch === null
+          ? []
+          : [{ type: 'line', xref: 'x', yref: 'paper', x0: viewEpoch, x1: viewEpoch, y0: 0, y1: 1, line: { color: t.text, width: 1.5, dash: 'dot' } }],
+    },
+  };
 }
 
 /** Learning curves (`make_performance_plot`), with an optional marker at the displayed epoch. */

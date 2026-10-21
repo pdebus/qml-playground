@@ -44,7 +44,7 @@ const worker = new Worker(new URL('../worker/trainer.worker.ts', import.meta.url
 const post = (msg: ToWorker) => worker.postMessage(msg);
 
 const initial = decodeHash(window.location.hash);
-const emptyMetrics = (base = 0): MetricsSeries => ({ base, loss: [], train: [], test: [] });
+const emptyMetrics = (base = 0): MetricsSeries => ({ base, loss: [], train: [], test: [], gradNorm: [], tangle: [] });
 
 function readThemeMode(): ThemeMode {
   try {
@@ -132,12 +132,14 @@ function configure(settings: Settings, restore?: RestoreState) {
 function mergeMetrics(current: MetricsSeries, chunk: Snapshot['metrics']): MetricsSeries {
   const keep = Math.max(0, chunk.from - chunk.base);
   const sameBase = current.base === chunk.base;
-  const cut = (a: number[]) => (sameBase ? a.slice(0, keep) : []);
+  const cut = <T,>(a: T[]): T[] => (sameBase ? a.slice(0, keep) : []);
   return {
     base: chunk.base,
     loss: cut(current.loss).concat(chunk.loss),
     train: cut(current.train).concat(chunk.train),
     test: cut(current.test).concat(chunk.test),
+    gradNorm: cut(current.gradNorm).concat(chunk.gradNorm),
+    tangle: cut(current.tangle).concat(chunk.tangle),
   };
 }
 

@@ -1041,3 +1041,8 @@ input[type='range']::-moz-range-thumb {
   font-size: 11.5px;
   line-height: 1.35;
 }
+
+/* ---------- Gradient flow ---------- */
+.gate.vanishing {
+  opacity: 0.35;
+}

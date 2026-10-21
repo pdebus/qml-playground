@@ -174,6 +174,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   const [gate, setGate] = useState<(GateRef & { left: number; top: number }) | null>(null);
   const [rowsRef, width] = useWidth<HTMLDivElement>();
   const followed = useFollowedSample(snap);
+  const [gradFlow, setGradFlow] = useState(false);
 
   useEffect(() => {
     if (!gate) return;
@@ -266,6 +267,20 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   };
   const unitN = units?.size ?? (regression ? 64 : 24);
 
+  // Gradient flow: taps scale with |∂L/∂w|, gates with ‖(∂L/∂w, ∂L/∂b)‖, both relative to the largest one.
+  const gradScale = useMemo(() => {
+    const grad = snap?.grad;
+    if (!grad) return null;
+    let maxW = 0;
+    let maxG = 0;
+    for (let k = 0; k < P; k++) {
+      maxW = Math.max(maxW, Math.abs(grad[k]));
+      maxG = Math.max(maxG, Math.hypot(grad[k], grad[P + k]));
+    }
+    return { grad, maxW: maxW || 1, maxG: maxG || 1 };
+  }, [snap, P]);
+  const showGrad = gradFlow && gradScale !== null;
+
   /** Everything belonging to layer `l`, drawn as the i-th column of its row. */
   const layerColumn = (l: number, i: number) => (
     <g key={l}>
@@ -282,14 +297,19 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           const bottom = top + g.gateH;
           const fromBottom = Q === 2 && q === 1;
           const busY = g.busY(fromBottom, f);
-          const strength = Math.min(1, Math.abs(w) / Math.PI);
-          const color = w >= 0 ? POSITIVE : NEGATIVE;
+          const gw = gradScale ? gradScale.grad[k] : 0;
+          const gb = gradScale ? gradScale.grad[P + k] : 0;
+          const gateGrad = gradScale ? Math.hypot(gw, gb) / gradScale.maxG : 1;
+          const strength = showGrad ? Math.sqrt(Math.abs(gw) / gradScale.maxW) : Math.min(1, Math.abs(w) / Math.PI);
+          const color = showGrad ? 'var(--accent)' : w >= 0 ? POSITIVE : NEGATIVE;
+          const vanishing = showGrad && gateGrad < 0.01;
           const title =
             `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = w·${featureName(f)} + b\n` +
             `w = ${fmt(w)}, b = ${fmt(b)} rad\n` +
             (Math.abs(w) >= Math.PI
               ? `The data sweeps ${(Math.abs(w) / Math.PI).toFixed(1)} full turns (high-frequency encoding).`
-              : `The data sweeps the angle from ${fmt(wrapAngle(b - Math.abs(w)))} to ${fmt(wrapAngle(b + Math.abs(w)))} rad.`);
+              : `The data sweeps the angle from ${fmt(wrapAngle(b - Math.abs(w)))} to ${fmt(wrapAngle(b + Math.abs(w)))} rad.`) +
+            (gradScale ? `\n∂L/∂w = ${gw.toExponential(1)}, ∂L/∂b = ${gb.toExponential(1)}` : '');
           return (
             <g key={`${q}-${j}`}>
               <line
@@ -303,7 +323,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
               />
               <circle cx={cx} cy={busY} r={1.5 + strength * 1.5} fill={color} />
               <g
-                className={`gate${gate && gate.l === l && gate.q === q && gate.j === j ? ' selected' : ''}`}
+                className={`gate${gate && gate.l === l && gate.q === q && gate.j === j ? ' selected' : ''}${vanishing ? ' vanishing' : ''}`}
                 role="button"
                 tabIndex={0}
                 aria-label={`Layer ${l + 1}, Q${q + 1}, ${name}(${ANGLE_NAMES[j]}): details`}
@@ -548,6 +568,9 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           onChange={setMode}
         />
         <Legend mode={effectiveMode} pal={pal} numClasses={info.numClasses} />
+        <label className="toggle" title="Tap width = |∂L/∂w|; gates with a near-zero gradient are dimmed">
+          <input type="checkbox" checked={gradFlow} onChange={(e) => setGradFlow(e.target.checked)} /> Gradient flow
+        </label>
         <label className="toggle">
           <input type="checkbox" checked={compact} onChange={(e) => setCompact(e.target.checked)} /> Compact
         </label>
@@ -559,15 +582,22 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
       {hover && units && <HoverCard hover={hover} units={units} info={info} mode={effectiveMode} />}
       {gate && <GateDetails gate={gate} info={info} snap={snap} featIdx={featIdx} followed={followed} onClose={() => setGate(null)} />}
 
-      <p className="legend-note muted">
-        <b>Dial</b>: needle = bias b, wedge = angles w·x + b swept by the data (<span style={{ color: POSITIVE }}>w &gt; 0</span>,{' '}
-        <span style={{ color: NEGATIVE }}>w &lt; 0</span>, ×n = full turns). <b>Tap width</b> = |w|.
-        <InfoTip>
-          Each dial shows one rotation angle of a gate. The needle points at the bias b, and the shaded wedge is the range of
-          angles w·x + b the data sweeps for x ∈ [−1, 1]. A full disc with ×n means the data sweeps n full turns, a
-          high-frequency encoding. The width of a data tap shows |w|, i.e. how strongly that feature is uploaded.
-        </InfoTip>
-      </p>
+      {showGrad ? (
+        <p className="legend-note muted">
+          <b>Gradient flow</b>: <span style={{ color: 'var(--accent)' }}>tap width</span> = |∂L/∂w| relative to the largest one; dimmed
+          gates have less than 1% of the largest gradient (full training set).
+        </p>
+      ) : (
+        <p className="legend-note muted">
+          <b>Dial</b>: needle = bias b, wedge = angles w·x + b swept by the data (<span style={{ color: POSITIVE }}>w &gt; 0</span>,{' '}
+          <span style={{ color: NEGATIVE }}>w &lt; 0</span>, ×n = full turns). <b>Tap width</b> = |w|.
+          <InfoTip>
+            Each dial shows one rotation angle of a gate. The needle points at the bias b, and the shaded wedge is the range of
+            angles w·x + b the data sweeps for x ∈ [−1, 1]. A full disc with ×n means the data sweeps n full turns, a
+            high-frequency encoding. The width of a data tap shows |w|, i.e. how strongly that feature is uploaded.
+          </InfoTip>
+        </p>
+      )}
     </div>
   );
 }

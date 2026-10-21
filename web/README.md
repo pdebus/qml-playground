@@ -67,6 +67,10 @@ tests/        Vitest suites; fixtures/reference.json is generated from the PyTor
   score: the probability (2 qubits) or the fidelity with the class target (1 qubit). Regression adds the Fourier
   spectrum |c_k|, k = 0…10, of the model output and the target, a direct DFT on 512 points of t = πx
   (`src/viz/fourier.ts`).
+- **Diagnostics.** Every epoch also records the mean gradient norm per layer over its batches (free: the
+  gradients exist anyway; without regularization) and, for two qubits, the mean test-set tangle per layer. The
+  Metrics panel shows both as epoch × layer heatmaps (histories over 300 epochs are averaged into bins). The
+  circuit's *Gradient flow* toggle scales the taps with |∂L/∂w| and dims gates below 1% of the largest gradient.
 - **Replay.** Parameters and Adam state are recorded per epoch, for the last 5000 epochs. Seeking shows a past
   epoch. *Resume from here* truncates the history and continues training from that point.
 - **Sharing.** Settings are kept in the URL hash. *Share trained model* also encodes the displayed parameters

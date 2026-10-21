@@ -47,6 +47,10 @@ export class QuantumModel {
   readonly targets: Float64Array[];
   readonly adam: Adam;
   epoch = 0;
+  /** ‖∂L/∂θ‖ per layer (weights and biases, without regularization) of the last `lossAndGrad`. */
+  readonly layerGradNorms: Float64Array;
+  /** Mean of `layerGradNorms` over the batches of the last `trainEpoch`. */
+  readonly epochGradNorms: Float64Array;
 
   private readonly grad: Float64Array;
   private readonly gw: Float64Array;
@@ -69,6 +73,8 @@ export class QuantumModel {
     this.g = new Float64Array(this.circuit.stateSize);
     this.sampleStates = new Float64Array(config.numLayers * this.circuit.stateSize);
     this.adam = new Adam(2 * this.P);
+    this.layerGradNorms = new Float64Array(config.numLayers);
+    this.epochGradNorms = new Float64Array(config.numLayers);
     if (config.task === 'classification') {
       const ds = config.dataset as ClassificationDataset;
       this.numClasses = datasetClasses(ds);
@@ -127,6 +133,12 @@ export class QuantumModel {
       loss += this.sampleLoss(this.sampleStates, lastOffset, set.y[i], scale) * scale;
       circuit.backward(set.x, xo, weights, biases, this.sampleStates, 0, g, gw, gb);
     }
+    const per = this.P / this.config.numLayers;
+    for (let l = 0; l < this.config.numLayers; l++) {
+      let sq = 0;
+      for (let k = l * per; k < (l + 1) * per; k++) sq += gw[k] * gw[k] + gb[k] * gb[k];
+      this.layerGradNorms[l] = Math.sqrt(sq);
+    }
     if (opts && opts.regType !== 'none') {
       loss += applyRegularization(this.theta, this.grad, opts.regType, opts.regStrength);
     }
@@ -149,11 +161,14 @@ export class QuantumModel {
     const bs = Math.max(1, Math.min(opts.batchSize, set.n));
     let total = 0;
     let batches = 0;
+    this.epochGradNorms.fill(0);
     for (let start = 0; start + bs <= set.n; start += bs) {
       total += this.lossAndGrad(set, order, start, bs, opts);
+      for (let l = 0; l < this.layerGradNorms.length; l++) this.epochGradNorms[l] += this.layerGradNorms[l];
       this.adam.step(this.theta, this.grad, opts.lr);
       batches++;
     }
+    if (batches) for (let l = 0; l < this.epochGradNorms.length; l++) this.epochGradNorms[l] /= batches;
     this.epoch += 1;
     return batches ? total / batches : NaN;
   }

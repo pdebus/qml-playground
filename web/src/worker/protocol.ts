@@ -55,6 +55,10 @@ export interface MetricsChunk {
   train: number[];
   /** Test accuracy (classification) or test MSE (regression). */
   test: number[];
+  /** Mean ‖∂L/∂θ‖ per layer over the epoch's batches, [epoch][layer]; NaN for the starting epoch. */
+  gradNorm: number[][];
+  /** Two qubits: mean test-set tangle after each layer, [epoch][layer]; empty rows for one qubit. */
+  tangle: number[][];
 }
 
 /**
