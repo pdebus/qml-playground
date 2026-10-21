@@ -21,7 +21,7 @@ It is meant for learners, educators and researchers who want to explore QML mode
   <img src="QMLPG_GUI.png" alt="Screenshot of the QML Playground" width="700"/>
 </p>
 
-👉 **[Try the Live Demo](https://websites.fraunhofer.de/qml-playground/)**
+👉 **[Try the Live Demo](https://fraunhofer-aisec.github.io/qml-playground/)**
 
 No installation required: ideal for quick experiments, teaching and outreach.
 
