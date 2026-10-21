@@ -99,7 +99,17 @@ pip install -r requirements.txt
 
 ## 🖥️ Running the Application
 
-### Local Development
+### Browser-only version (`web/`)
+
+A static rewrite in TypeScript runs the quantum simulator, training and all visualizations in your browser. It needs no server and deploys to GitHub Pages. It adds training-speed control, epoch replay, shareable links and dark mode. See [`web/README.md`](web/README.md).
+
+```bash
+cd web
+npm install
+npm run dev   # http://localhost:5173/
+```
+
+### Local Development (Dash)
 
 ```bash
 python app_dev.py

@@ -60,14 +60,17 @@ export const BUGN = [
   'rgb(0,68,27)',
 ];
 
+/** Same system font stack as --font in tokens.css (no externally loaded fonts). */
+const PLOT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
 export function baseLayout(t: PlotTheme): Record<string, unknown> {
   return {
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(0,0,0,0)',
-    font: { family: 'Inter, system-ui, sans-serif', color: t.text, size: 11 },
+    font: { family: PLOT_FONT, color: t.text, size: 11 },
     margin: { l: 0, r: 0, t: 0, b: 0 },
     showlegend: false,
     autosize: true,
-    hoverlabel: { font: { family: 'Inter, system-ui, sans-serif' } },
+    hoverlabel: { font: { family: PLOT_FONT } },
   };
 }

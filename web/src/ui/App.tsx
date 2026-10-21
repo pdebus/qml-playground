@@ -77,7 +77,9 @@ export function App() {
             Imprint
           </a>
         </nav>
-        <span className="muted">© 2025 Pascal Debus, Fraunhofer AISEC · All computation runs locally in your browser.</span>
+        <span className="muted">
+          © {new Date().getFullYear()} Pascal Debus, Fraunhofer AISEC · All computation runs locally in your browser.
+        </span>
       </footer>
     </div>
   );
