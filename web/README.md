@@ -45,7 +45,7 @@ src/model/    losses (fidelity, NLL, MSE on ⟨Z⟩) with ∂ℓ/∂ψ, Adam (to
 src/data/     seeded RNG, dataset generators, single-qubit target states
 src/worker/   Trainer (model + replay history, no DOM deps) and the Web Worker loop / message protocol
 src/state/    Zustand store bridging UI and worker, settings model, URL hash encoding
-src/viz/      Plotly partial bundle + figure builders (Bloch sphere, Q-simplex, circuit, decision boundary, …)
+src/viz/      Plotly partial bundle + figure builders (Bloch sphere, Q-simplex, metrics, …), unit-map rendering, marching squares
 src/ui/       React panels and controls
 tests/        Vitest suites; fixtures/reference.json is generated from the PyTorch app
 ```
@@ -85,7 +85,7 @@ The tests compare at float32 precision, because the reference runs in complex64.
 | A batch size larger than the training set (e.g. 128 on the ~80 regression samples) trains nothing | The batch is clamped to the data set size |
 | The circuit diagram shows CZ symbols and no entangler after the last layer | Shows the CNOT that is actually applied after every layer |
 | The live "predicted class" panel is colored by the true labels | Colored by the predictions |
-| 15×15 decision grid with autoscaled colors | Configurable grid (default 40×40) with a fixed [0, 1] color scale |
+| 15×15 decision grid with autoscaled colors | Configurable grid (default 40×40): predicted class faded by confidence, plus the decision boundary (argmax; p = 0.5 for two classes) |
 
 Random draws (initialization, data points, shuffling) come from a seeded PRNG rather than torch's, so
 individual runs differ numerically from the Dash app while following the same distributions.

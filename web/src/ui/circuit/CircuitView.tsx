@@ -8,7 +8,9 @@ import {
   UNIT_MODES,
   blochValue,
   classAt,
+  classColor,
   cssColor,
+  describeClass,
   divergingColor,
   isDiverging,
   outputValue,
@@ -20,11 +22,17 @@ import {
   type UnitMode,
 } from '../../viz/unitMaps';
 import { InfoTip, Segmented } from '../controls/Controls';
+import { useWidth } from '../hooks';
 
 const SUB_GATES = ['RZ', 'RY', 'RZ'] as const;
 const ANGLE_NAMES = ['φ', 'θ', 'ω'] as const;
 const FEATURE_NAMES = ['x₁', 'x₂'];
 const TAU = 2 * Math.PI;
+
+/** Left margin of every row (qubit and bus labels). */
+const PREFIX = 52;
+/** Gap between the input tiles above the first row. */
+const INPUT_GAP = 36;
 
 interface Geometry {
   gateW: number;
@@ -33,13 +41,20 @@ interface Geometry {
   dialR: number;
   labels: boolean;
   tile: number;
+  /** Width of one layer column. */
   colW: number;
+  /** Width reserved for the measurement and output label at the end of the last row. */
+  outW: number;
+  /** Height of the input band above the first row. */
+  inputBand: number;
   busY: (bottom: boolean, f: number) => number;
   wireY: (q: number) => number;
   height: number;
-  gateX: (l: number, j: number) => number;
-  entX: (l: number) => number;
-  tileX: (l: number) => number;
+  /** x positions inside a row, for the i-th layer of that row. */
+  gateX: (i: number, j: number) => number;
+  entX: (i: number) => number;
+  tileX: (i: number) => number;
+  rowContentW: (layers: number) => number;
 }
 
 function geometry(numQubits: 1 | 2, numFeatures: number, compact: boolean): Geometry {
@@ -55,8 +70,10 @@ function geometry(numQubits: 1 | 2, numFeatures: number, compact: boolean): Geom
   const wireGap = Math.max(110, gateH + tile + 30);
   const wireY = (q: number) => wire0 + q * wireGap;
   const lastWire = wireY(numQubits - 1);
-  const busY = (bottom: boolean, f: number) => (bottom ? lastWire + gateH / 2 + 14 + f * busGap : 12 + f * busGap);
-  const height = numQubits === 2 ? busY(true, numFeatures - 1) + 12 : lastWire + gateH / 2 + 14;
+  // Bottom buses are stacked in reverse so their left-margin feeds nest without crossing.
+  const busY = (bottom: boolean, f: number) =>
+    bottom ? lastWire + gateH / 2 + 14 + (numFeatures - 1 - f) * busGap : 12 + f * busGap;
+  const height = numQubits === 2 ? busY(true, 0) + 12 : lastWire + gateH / 2 + 22;
   return {
     gateW,
     gateH,
@@ -65,13 +82,21 @@ function geometry(numQubits: 1 | 2, numFeatures: number, compact: boolean): Geom
     labels: !compact,
     tile,
     colW,
+    outW: 96,
+    inputBand: tile + 14,
     busY,
     wireY,
     height,
-    gateX: (l, j) => 14 + l * colW + j * pitch,
-    entX: (l) => 14 + l * colW + 3 * pitch + entW / 2 - 4,
-    tileX: (l) => 14 + l * colW + 3 * pitch + entW + 6,
+    gateX: (i, j) => 10 + i * colW + j * pitch,
+    entX: (i) => 10 + i * colW + 3 * pitch + entW / 2 - 4,
+    tileX: (i) => 10 + i * colW + 3 * pitch + entW + 6,
+    rowContentW: (layers) => 10 + layers * colW,
   };
+}
+
+/** How many layers fit on one row of the given width (the circuit folds onto further rows). */
+function layersPerRow(width: number, colW: number, outW: number): number {
+  return Math.max(1, Math.floor((width - PREFIX - outW - 4) / colW));
 }
 
 /** Classical (double-line) wire carrying an input feature. */
@@ -126,7 +151,7 @@ function Dial({ cx, cy, r, w, b }: { cx: number; cy: number; r: number; w: numbe
 }
 
 interface HoverState {
-  kind: 'unit' | 'tangle' | 'output' | 'input';
+  kind: 'unit' | 'tangle' | 'input';
   l: number;
   q: number;
   /** Grid point index under the cursor. */
@@ -143,6 +168,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   const [compactChoice, setCompact] = useState<boolean | null>(null);
   const compact = compactChoice ?? info.numLayers > 8;
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [rowsRef, width] = useWidth<HTMLDivElement>();
 
   const regression = info.task === 'regression';
   const Q = info.numQubits;
@@ -160,8 +186,12 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
   const images = useMemo(() => renderUnitImages(units, info, effectiveMode, pal, theme), [units, info, effectiveMode, pal, theme]);
   const inputImages = useMemo(() => renderInputImages(regression, pal, theme), [regression, pal, theme]);
 
-  const width = 14 + L * g.colW + g.tile + 30;
-  const leftW = 92;
+  // Fold the circuit onto as many rows as needed so it never scrolls horizontally.
+  const perRow = layersPerRow(width, g.colW, g.outW);
+  const rows: number[][] = [];
+  for (let start = 0; start < L; start += perRow) {
+    rows.push(Array.from({ length: Math.min(perRow, L - start) }, (_, i) => start + i));
+  }
 
   const onTileMove = (e: MouseEvent<SVGImageElement>, kind: HoverState['kind'], l: number, q: number, image: string) => {
     if (!units) return;
@@ -183,6 +213,258 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
     onMouseLeave: () => setHover(null),
   });
 
+  const featureName = (f: number) => (regression ? 'x' : FEATURE_NAMES[f]);
+
+  /** Everything belonging to layer `l`, drawn as the i-th column of its row. */
+  const layerColumn = (l: number, i: number) => (
+    <g key={l}>
+      {Array.from({ length: Q }, (_, q) =>
+        SUB_GATES.map((name, j) => {
+          const k = (l * Q + q) * 3 + j;
+          const w = theta ? theta[k] : 0;
+          const b = theta ? theta[P + k] : 0;
+          const f = featIdx[k];
+          const x = g.gateX(i, j);
+          const cx = x + g.gateW / 2;
+          const cy = g.wireY(q);
+          const top = cy - g.gateH / 2;
+          const bottom = top + g.gateH;
+          const fromBottom = Q === 2 && q === 1;
+          const busY = g.busY(fromBottom, f);
+          const strength = Math.min(1, Math.abs(w) / Math.PI);
+          const color = w >= 0 ? POSITIVE : NEGATIVE;
+          const title =
+            `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = w·${featureName(f)} + b\n` +
+            `w = ${fmt(w)}, b = ${fmt(b)} rad\n` +
+            (Math.abs(w) >= Math.PI
+              ? `The data sweeps ${(Math.abs(w) / Math.PI).toFixed(1)} full turns (high-frequency encoding).`
+              : `The data sweeps the angle from ${fmt(wrapAngle(b - Math.abs(w)))} to ${fmt(wrapAngle(b + Math.abs(w)))} rad.`);
+          return (
+            <g key={`${q}-${j}`}>
+              <line
+                x1={cx}
+                x2={cx}
+                y1={busY}
+                y2={fromBottom ? bottom : top}
+                stroke={color}
+                strokeWidth={1 + 3.5 * strength}
+                strokeOpacity={0.25 + 0.75 * strength}
+              />
+              <circle cx={cx} cy={busY} r={1.5 + strength * 1.5} fill={color} />
+              <g className="gate">
+                <title>{title}</title>
+                <rect x={x} y={top} width={g.gateW} height={g.gateH} rx={6} className="gate-box" />
+                {g.labels && (
+                  <text x={cx} y={top + 11} textAnchor="middle" className="gate-name">
+                    {name}
+                  </text>
+                )}
+                <Dial cx={cx} cy={g.labels ? cy + 1 : cy} r={g.dialR} w={w} b={b} />
+                {g.labels && (
+                  <text x={cx} y={bottom - 4} textAnchor="middle" className="gate-feature">
+                    {featureName(f)}
+                  </text>
+                )}
+              </g>
+            </g>
+          );
+        }),
+      )}
+
+      {Q === 2 && (
+        <g className="cnot">
+          <title>CNOT: flips Q2 when Q1 is |1⟩. This is the only gate that can entangle the qubits.</title>
+          <line x1={g.entX(i)} x2={g.entX(i)} y1={g.wireY(0)} y2={g.wireY(1) + 9} className="wire" />
+          <circle cx={g.entX(i)} cy={g.wireY(0)} r={4.5} fill="var(--text)" />
+          <circle cx={g.entX(i)} cy={g.wireY(1)} r={9} fill="var(--surface)" className="wire" />
+          <line x1={g.entX(i) - 9} x2={g.entX(i) + 9} y1={g.wireY(1)} y2={g.wireY(1)} className="wire" />
+        </g>
+      )}
+
+      {Array.from({ length: Q }, (_, q) => {
+        const img = images?.unit[l * Q + q];
+        const y = g.wireY(q) - g.tile / 2;
+        return img ? (
+          <g key={`u${q}`}>
+            <image
+              href={img}
+              x={g.tileX(i)}
+              y={y}
+              width={g.tile}
+              height={g.tile}
+              preserveAspectRatio="none"
+              className="unit-tile"
+              {...tileProps('unit', l, q, img)}
+            />
+            <rect x={g.tileX(i)} y={y} width={g.tile} height={g.tile} className="unit-frame" pointerEvents="none" />
+          </g>
+        ) : null;
+      })}
+      {Q === 2 && images?.tangle[l] && (
+        <g>
+          <image
+            href={images.tangle[l]}
+            x={g.tileX(i) + 6}
+            y={(g.wireY(0) + g.wireY(1)) / 2 - (g.tile - 12) / 2}
+            width={g.tile - 12}
+            height={g.tile - 12}
+            preserveAspectRatio="none"
+            className="unit-tile"
+            {...tileProps('tangle', l, 0, images.tangle[l])}
+          />
+          <rect
+            x={g.tileX(i) + 6}
+            y={(g.wireY(0) + g.wireY(1)) / 2 - (g.tile - 12) / 2}
+            width={g.tile - 12}
+            height={g.tile - 12}
+            className="unit-frame dashed"
+            pointerEvents="none"
+          />
+        </g>
+      )}
+      <text
+        x={g.gateX(i, 0) + (3 * g.pitch) / 2 - 3}
+        y={Q === 2 ? (g.wireY(0) + g.wireY(1)) / 2 + 4 : g.height - 4}
+        textAnchor="middle"
+        className="circuit-label"
+      >
+        Layer {l + 1}
+      </text>
+    </g>
+  );
+
+  /** x of the vertical drop from input f down to its bus, in row coordinates. */
+  const inputX = (f: number) => width / 2 - (F * g.tile + (F - 1) * INPUT_GAP) / 2 + f * (g.tile + INPUT_GAP);
+  const dropX = (f: number) => inputX(f) + g.tile / 2;
+
+  /** Input tiles centered above the first row, each dropping a bus onto its feature line. */
+  const inputs = Array.from({ length: F }, (_, f) => {
+    const x = inputX(f);
+    const y = 4;
+    return (
+      <g key={`in${f}`}>
+        <Bus d={`M${dropX(f)},${y + g.tile} V${g.inputBand + g.busY(false, f)}`} />
+        <image
+          href={inputImages[f]}
+          x={x}
+          y={y}
+          width={g.tile}
+          height={g.tile}
+          className="unit-tile"
+          preserveAspectRatio="none"
+          {...tileProps('input', 0, f, inputImages[f])}
+        />
+        <rect x={x} y={y} width={g.tile} height={g.tile} className="unit-frame" pointerEvents="none" />
+        <text x={x - 6} y={y + g.tile / 2 + 4} textAnchor="end" className="circuit-label strong">
+          {featureName(f)}
+        </text>
+      </g>
+    );
+  });
+
+  /** A horizontal bus from x0 to x1, with gaps where a drop to a lower bus crosses it (first row). */
+  const busLine = (y: number, x0: number, x1: number, f: number, first: boolean) => {
+    const cuts = first ? Array.from({ length: F - f - 1 }, (_, k) => dropX(f + 1 + k)).filter((x) => x > x0 && x < x1) : [];
+    const stops = [x0, ...cuts.flatMap((x) => [x - 5, x + 5]), x1];
+    const d = stops.reduce((acc, x, k) => (k % 2 === 0 ? `${acc}M${x},${y}` : `${acc}H${x}`), '');
+    return <Bus d={d} />;
+  };
+
+  /** Measurement meter at the end of a qubit wire. */
+  const meter = (x: number, y: number, key: number) => (
+    <g key={key} className="meter">
+      <rect x={x} y={y - 10} width={24} height={20} rx={3} className="gate-box" />
+      <path d={`M${x + 5},${y + 5} A7,7 0 0 1 ${x + 19},${y + 5}`} className="wire" fill="none" />
+      <line x1={x + 12} y1={y + 5} x2={x + 17} y2={y - 4} className="wire" />
+    </g>
+  );
+
+  const renderRow = (layers: number[], r: number) => {
+    const first = r === 0;
+    const last = r === rows.length - 1;
+    const prefix = PREFIX;
+    const contentEnd = prefix + g.rowContentW(layers.length);
+    const top = first ? g.inputBand : 0;
+    const wireEnd = last ? contentEnd + 4 : width - 18;
+    const midY = Q === 2 ? (g.wireY(0) + g.wireY(1)) / 2 : g.wireY(0);
+    return (
+      <svg
+        key={r}
+        width={width}
+        height={g.height + top}
+        className="circuit-row"
+        role="img"
+        aria-label={`Circuit layers ${layers[0] + 1} to ${layers[layers.length - 1] + 1}`}
+      >
+        {first && inputs}
+        <g transform={`translate(0,${top})`}>
+          {/* Classical data buses */}
+          {Array.from({ length: F }, (_, f) => {
+            // The first row feeds the bottom buses (2 qubits) through nested connectors in the left margin.
+            const xv = 8 + f * 7;
+            return (
+              <g key={`bus${f}`}>
+                {busLine(g.busY(false, f), first && Q === 2 ? xv : prefix, contentEnd - 10, f, first)}
+                {Q === 2 && <Bus d={`M${first ? xv : prefix},${first ? g.busY(false, f) : g.busY(true, f)} ${first ? `V${g.busY(true, f)}` : ''} H${contentEnd - 10}`} />}
+                {!first && (
+                  <>
+                    <text x={prefix - 4} y={g.busY(false, f) + 3.5} textAnchor="end" className="circuit-label small">
+                      {featureName(f)}
+                    </text>
+                    {Q === 2 && (
+                      <text x={prefix - 4} y={g.busY(true, f) + 3.5} textAnchor="end" className="circuit-label small">
+                        {featureName(f)}
+                      </text>
+                    )}
+                  </>
+                )}
+              </g>
+            );
+          })}
+          {/* Qubit wires, with continuation markers between rows */}
+          {Array.from({ length: Q }, (_, q) => (
+            <g key={`w${q}`}>
+              <line x1={prefix - 18} x2={wireEnd} y1={g.wireY(q)} y2={g.wireY(q)} className="wire" />
+              {first ? (
+                <>
+                  <text x={prefix - 2} y={g.wireY(q) - 7} textAnchor="end" className="circuit-label strong">
+                    Q{q + 1}
+                  </text>
+                  <text x={prefix - 2} y={g.wireY(q) + 15} textAnchor="end" className="circuit-label">
+                    |0⟩
+                  </text>
+                </>
+              ) : (
+                <text x={prefix - 22} y={g.wireY(q) + 4} textAnchor="end" className="circuit-label strong">
+                  ↪ Q{q + 1}
+                </text>
+              )}
+              {!last && (
+                <text x={width - 14} y={g.wireY(q) + 4} className="circuit-label strong">
+                  ↩
+                </text>
+              )}
+            </g>
+          ))}
+          <g transform={`translate(${prefix},0)`}>{layers.map((l, i) => layerColumn(l, i))}</g>
+          {last && (
+            <g>
+              <title>
+                {regression
+                  ? 'Measurement: ⟨Z⟩ of Q1 is the model output, shown large in the Output panel.'
+                  : 'Measurement: the class scores are read out here; the prediction is shown large in the Output panel.'}
+              </title>
+              {Array.from({ length: Q }, (_, q) => meter(wireEnd, g.wireY(q), q))}
+              <text x={wireEnd + 32} y={midY + 4} className="circuit-label strong">
+                Output →
+              </text>
+            </g>
+          )}
+        </g>
+      </svg>
+    );
+  };
+
   return (
     <div className="circuit">
       <div className="circuit-toolbar">
@@ -190,7 +472,7 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
           Unit maps
           <InfoTip>
             Like the neurons in TensorFlow Playground, each tile shows one quantity over the whole input space after a
-            layer. {modeInfo.description} The tile between the wires shows the entanglement (tangle) of the two qubits.
+            layer. {modeInfo.description} {Q === 2 && 'The dashed tile between the wires shows the entanglement (tangle) of the two qubits.'}
           </InfoTip>
         </div>
         <Segmented
@@ -205,208 +487,19 @@ export function CircuitView({ info, snap, theme }: { info: DataInfo; snap: Snaps
         </label>
       </div>
 
-      <div className="circuit-scroll">
-        {/* Inputs: sticky so they stay visible while scrolling through many layers. */}
-        <svg className="circuit-inputs" width={leftW} height={g.height} role="img" aria-label="Input features">
-          {Array.from({ length: F }, (_, f) => {
-            const size = 34;
-            const y = g.height / 2 - (F * (size + 16)) / 2 + f * (size + 16);
-            const xv = leftW - 34 + f * 8;
-            return (
-              <g key={f}>
-                {/* Feeder from the input node to its bus line(s). */}
-                <Bus d={`M${6 + size},${y + size / 2} H${xv} V${g.busY(false, f)} H${leftW}`} />
-                {Q === 2 && <Bus d={`M${xv},${y + size / 2} V${g.busY(true, f)} H${leftW}`} />}
-                <image
-                  href={inputImages[f]}
-                  x={6}
-                  y={y}
-                  width={size}
-                  height={size}
-                  className="unit-tile"
-                  preserveAspectRatio="none"
-                  {...tileProps('input', 0, f, inputImages[f])}
-                />
-                <rect x={6} y={y} width={size} height={size} className="unit-frame" pointerEvents="none" />
-                <text x={6 + size / 2} y={y + size + 12} textAnchor="middle" className="circuit-label strong">
-                  {regression ? 'x' : FEATURE_NAMES[f]}
-                </text>
-              </g>
-            );
-          })}
-          {Array.from({ length: Q }, (_, q) => (
-            <g key={q}>
-              <text x={leftW - 4} y={g.wireY(q) - 8} textAnchor="end" className="circuit-label strong">
-                Q{q + 1}
-              </text>
-              <text x={leftW - 4} y={g.wireY(q) + 14} textAnchor="end" className="circuit-label">
-                |0⟩
-              </text>
-              <line x1={leftW - 22} x2={leftW} y1={g.wireY(q)} y2={g.wireY(q)} className="wire" />
-            </g>
-          ))}
-        </svg>
-
-        <svg className="circuit-main" width={width} height={g.height} role="img" aria-label="Data re-uploading circuit">
-          {/* Classical data buses */}
-          {Array.from({ length: F }, (_, f) => {
-            const end = 14 + L * g.colW - 10;
-            return (
-              <g key={f}>
-                <Bus d={`M0,${g.busY(false, f)} H${end}`} />
-                {Q === 2 && <Bus d={`M0,${g.busY(true, f)} H${end}`} />}
-              </g>
-            );
-          })}
-          {/* Qubit wires */}
-          {Array.from({ length: Q }, (_, q) => (
-            <line key={q} x1={0} x2={width - g.tile - 24} y1={g.wireY(q)} y2={g.wireY(q)} className="wire" />
-          ))}
-
-          {Array.from({ length: L }, (_, l) => (
-            <g key={l}>
-              <text x={g.gateX(l, 0) + (3 * g.pitch) / 2 - 3} y={g.height - 2} textAnchor="middle" className="circuit-label">
-                {Q === 1 ? `Layer ${l + 1}` : ''}
-              </text>
-              {Array.from({ length: Q }, (_, q) =>
-                SUB_GATES.map((name, j) => {
-                  const k = (l * Q + q) * 3 + j;
-                  const w = theta ? theta[k] : 0;
-                  const b = theta ? theta[P + k] : 0;
-                  const f = featIdx[k];
-                  const x = g.gateX(l, j);
-                  const cy = g.wireY(q);
-                  const top = cy - g.gateH / 2;
-                  const bottom = top + g.gateH;
-                  const fromBottom = Q === 2 && q === 1;
-                  const busY = g.busY(fromBottom, f);
-                  const strength = Math.min(1, Math.abs(w) / Math.PI);
-                  const lo = wrapAngle(b - Math.abs(w));
-                  const hi = wrapAngle(b + Math.abs(w));
-                  const title =
-                    `Layer ${l + 1}, Q${q + 1}: ${name}(${ANGLE_NAMES[j]}), ${ANGLE_NAMES[j]} = w·${regression ? 'x' : FEATURE_NAMES[f]} + b\n` +
-                    `w = ${fmt(w)}, b = ${fmt(b)} rad\n` +
-                    (Math.abs(w) >= Math.PI
-                      ? `The data sweeps ${(Math.abs(w) / Math.PI).toFixed(1)} full turns (high-frequency encoding).`
-                      : `The data sweeps the angle from ${fmt(lo)} to ${fmt(hi)} rad.`);
-                  return (
-                    <g key={`${q}-${j}`}>
-                      <line
-                        x1={x + g.gateW / 2}
-                        x2={x + g.gateW / 2}
-                        y1={busY}
-                        y2={fromBottom ? bottom : top}
-                        stroke={w >= 0 ? POSITIVE : NEGATIVE}
-                        strokeWidth={1 + 3.5 * strength}
-                        strokeOpacity={0.25 + 0.75 * strength}
-                      />
-                      <circle cx={x + g.gateW / 2} cy={busY} r={1.5 + strength * 1.5} fill={w >= 0 ? POSITIVE : NEGATIVE} />
-                      <g className="gate">
-                        <title>{title}</title>
-                        <rect x={x} y={top} width={g.gateW} height={g.gateH} rx={6} className="gate-box" />
-                        {g.labels && (
-                          <text x={x + g.gateW / 2} y={top + 11} textAnchor="middle" className="gate-name">
-                            {name}
-                          </text>
-                        )}
-                        <Dial cx={x + g.gateW / 2} cy={g.labels ? cy + 1 : cy} r={g.dialR} w={w} b={b} />
-                        {g.labels && (
-                          <text x={x + g.gateW / 2} y={bottom - 4} textAnchor="middle" className="gate-feature">
-                            {regression ? 'x' : FEATURE_NAMES[f]}
-                          </text>
-                        )}
-                      </g>
-                    </g>
-                  );
-                }),
-              )}
-
-              {Q === 2 && (
-                <g className="cnot">
-                  <title>CNOT: flips Q2 when Q1 is |1⟩. This is the only gate that can entangle the qubits.</title>
-                  <line x1={g.entX(l)} x2={g.entX(l)} y1={g.wireY(0)} y2={g.wireY(1) + 9} className="wire" />
-                  <circle cx={g.entX(l)} cy={g.wireY(0)} r={4.5} fill="var(--text)" />
-                  <circle cx={g.entX(l)} cy={g.wireY(1)} r={9} fill="var(--surface)" className="wire" />
-                  <line x1={g.entX(l) - 9} x2={g.entX(l) + 9} y1={g.wireY(1)} y2={g.wireY(1)} className="wire" />
-                </g>
-              )}
-
-              {Array.from({ length: Q }, (_, q) => {
-                const img = images?.unit[l * Q + q];
-                const y = g.wireY(q) - g.tile / 2;
-                return img ? (
-                  <g key={`u${q}`}>
-                    <image
-                      href={img}
-                      x={g.tileX(l)}
-                      y={y}
-                      width={g.tile}
-                      height={g.tile}
-                      preserveAspectRatio="none"
-                      className="unit-tile"
-                      {...tileProps('unit', l, q, img)}
-                    />
-                    <rect x={g.tileX(l)} y={y} width={g.tile} height={g.tile} className="unit-frame" pointerEvents="none" />
-                  </g>
-                ) : null;
-              })}
-              {Q === 2 && images?.tangle[l] && (
-                <g>
-                  <image
-                    href={images.tangle[l]}
-                    x={g.tileX(l) + 6}
-                    y={(g.wireY(0) + g.wireY(1)) / 2 - (g.tile - 12) / 2}
-                    width={g.tile - 12}
-                    height={g.tile - 12}
-                    preserveAspectRatio="none"
-                    className="unit-tile"
-                    {...tileProps('tangle', l, 0, images.tangle[l])}
-                  />
-                  <rect
-                    x={g.tileX(l) + 6}
-                    y={(g.wireY(0) + g.wireY(1)) / 2 - (g.tile - 12) / 2}
-                    width={g.tile - 12}
-                    height={g.tile - 12}
-                    className="unit-frame dashed"
-                    pointerEvents="none"
-                  />
-                </g>
-              )}
-              {Q === 2 && (
-                <text x={g.gateX(l, 0) + (3 * g.pitch) / 2 - 3} y={(g.wireY(0) + g.wireY(1)) / 2 + 4} textAnchor="middle" className="circuit-label">
-                  Layer {l + 1}
-                </text>
-              )}
-            </g>
-          ))}
-
-          {/* Output node */}
-          {images?.output && (
-            <g>
-              <text x={width - g.tile / 2 - 16} y={g.wireY(0) - g.tile / 2 - 14} textAnchor="middle" className="circuit-label strong">
-                Output
-              </text>
-              <image
-                href={images.output}
-                x={width - g.tile - 16}
-                y={g.wireY(0) - g.tile / 2}
-                width={g.tile}
-                height={g.tile}
-                preserveAspectRatio="none"
-                className="unit-tile"
-                {...tileProps('output', L - 1, 0, images.output)}
-              />
-              <rect x={width - g.tile - 16} y={g.wireY(0) - g.tile / 2} width={g.tile} height={g.tile} className="unit-frame strong" pointerEvents="none" />
-            </g>
-          )}
-        </svg>
+      <div ref={rowsRef} className="circuit-rows">
+        {width > 0 && rows.map(renderRow)}
       </div>
       {hover && units && <HoverCard hover={hover} units={units} info={info} mode={effectiveMode} />}
 
       <p className="legend-note muted">
-        Each <b>dial</b> shows a rotation angle: the needle is the bias b, and the shaded wedge is the range w·x + b that
-        the data sweeps (<span style={{ color: POSITIVE }}>blue</span> for w &gt; 0, <span style={{ color: NEGATIVE }}>orange</span> for w &lt; 0; ×n = full turns).
-        The width of a data tap shows |w|, i.e. how strongly that feature is uploaded.
+        <b>Dial</b>: needle = bias b, wedge = angles w·x + b swept by the data (<span style={{ color: POSITIVE }}>w &gt; 0</span>,{' '}
+        <span style={{ color: NEGATIVE }}>w &lt; 0</span>, ×n = full turns). <b>Tap width</b> = |w|.
+        <InfoTip>
+          Each dial shows one rotation angle of a gate. The needle points at the bias b, and the shaded wedge is the range of
+          angles w·x + b the data sweeps for x ∈ [−1, 1]. A full disc with ×n means the data sweeps n full turns, a
+          high-frequency encoding. The width of a data tap shows |w|, i.e. how strongly that feature is uploaded.
+        </InfoTip>
       </p>
     </div>
   );
@@ -450,13 +543,13 @@ function HoverCard({ hover, units, info, mode }: { hover: HoverState; units: Uni
   } else if (hover.kind === 'tangle') {
     title = `Entanglement after layer ${hover.l + 1}`;
     value = `tangle = ${tangleValue(units, hover.l, hover.p).toFixed(3)}`;
-  } else if (hover.kind === 'output' || mode === 'score') {
-    title = hover.kind === 'output' ? 'Model output' : `Q${hover.q + 1} after layer ${hover.l + 1}: prediction if measured here`;
+  } else if (mode === 'score') {
+    title = `Q${hover.q + 1} after layer ${hover.l + 1}: prediction if measured here`;
     if (regression) {
       value = `⟨Z⟩ = ${outputValue(units, hover.l, hover.p).toFixed(3)}`;
     } else {
       const { cls, confidence } = classAt(units, info.numClasses, hover.l, hover.p);
-      value = `class ${cls} (confidence ${(confidence * 100).toFixed(0)}%)`;
+      value = describeClass(cls, confidence);
     }
   } else {
     const label = UNIT_MODES.find((m) => m.value === mode)!.label;
@@ -476,7 +569,6 @@ function HoverCard({ hover, units, info, mode }: { hover: HoverState; units: Uni
 interface UnitImages {
   unit: string[];
   tangle: string[];
-  output: string;
 }
 
 function renderUnitImages(
@@ -498,8 +590,7 @@ function renderUnitImages(
   const classMap = (l: number) =>
     renderGrid(units.size, (p) => {
       const { cls, confidence } = classAt(units, C, l, p);
-      const c = pal.classes[cls];
-      return [0, 1, 2].map((i) => pal.neutral[i] + (c[i] - pal.neutral[i]) * (0.15 + 0.85 * confidence)) as [number, number, number];
+      return classColor(pal, cls, confidence);
     });
 
   const unit: string[] = [];
@@ -511,8 +602,7 @@ function renderUnitImages(
     }
   }
   const tangle = Q === 2 ? Array.from({ length: L }, (_, l) => render((p) => tangleValue(units, l, p), false)) : [];
-  const output = regression ? render((p) => outputValue(units, L - 1, p), true) : classMap(L - 1);
-  return { unit, tangle, output };
+  return { unit, tangle };
 }
 
 function renderInputImages(regression: boolean, pal: ReturnType<typeof unitPalette>, theme: PlotTheme): string[] {

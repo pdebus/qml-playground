@@ -1,28 +1,79 @@
+import type { ReactNode } from 'react';
 import { useApp } from '../../state/store';
-import { LAYERS, LR_OPTIONS, REG_STRENGTH_OPTIONS, REG_TYPES } from '../../state/settings';
-import { Field, IconButton, Panel, Segmented, Select, Slider } from '../controls/Controls';
+import { LAYERS, LR_OPTIONS, MC_RUNS, REG_STRENGTH_OPTIONS, REG_TYPES, SIGMA } from '../../state/settings';
+import { Field, IconButton, InfoTip, Panel, Segmented, Select, Slider } from '../controls/Controls';
+
+const LAYER_TICKS = Array.from({ length: LAYERS.max - LAYERS.min + 1 }, (_, i) => LAYERS.min + i);
+const LAYER_LABELS = [1, 5, 10, 15].filter((v) => v >= LAYERS.min && v <= LAYERS.max);
+
+/** One labeled row of settings. */
+function SettingsRow({ label, info, disabled, children }: { label: string; info?: ReactNode; disabled?: boolean; children: ReactNode }) {
+  return (
+    <div className={`settings-row${disabled ? ' disabled' : ''}`}>
+      <div className="settings-row-label">
+        {label}
+        {info && <InfoTip>{info}</InfoTip>}
+      </div>
+      <div className="settings-row-fields">{children}</div>
+    </div>
+  );
+}
 
 export function SettingsPanel() {
   const s = useApp((st) => st.settings);
   const update = useApp((st) => st.update);
+  const regression = s.task === 'regression';
 
   return (
     <Panel title="Settings" area="settings">
-      <div className="settings-grid">
+      <SettingsRow label="Model">
         <Field
-          label="Number of qubits"
+          label="Qubits"
           info="One qubit: states live on the Bloch sphere. Two qubits: the circuit can create entanglement, shown in the Q-simplex."
         >
           <Segmented
             label="Number of qubits"
             value={s.numQubits}
             options={[
-              { value: 1, label: 'Single qubit' },
-              { value: 2, label: 'Two qubits' },
+              { value: 1, label: '1 qubit' },
+              { value: 2, label: '2 qubits' },
             ]}
             onChange={(v) => update({ numQubits: v })}
           />
         </Field>
+        <Field
+          label="Layers"
+          info="Each layer re-uploads the input data through trainable rotations Rot(w·x + b). More layers make the model more expressive, like depth in a neural network."
+        >
+          <Slider
+            label="Number of layers"
+            value={s.numLayers}
+            min={LAYERS.min}
+            max={LAYERS.max}
+            onChange={(v) => update({ numLayers: v })}
+            ticks={LAYER_TICKS}
+            tickLabels={LAYER_LABELS}
+          />
+        </Field>
+        <Field label="Seed" info="Controls parameter initialization, data noise and shuffling. The same seed reproduces the same training run.">
+          <div className="seed">
+            <input
+              className="input"
+              type="number"
+              min={0}
+              aria-label="Random seed"
+              value={s.seed}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isInteger(v) && v >= 0 && v < 2 ** 32) update({ seed: v });
+              }}
+            />
+            <IconButton icon="dice" label="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 100000) })} />
+          </div>
+        </Field>
+      </SettingsRow>
+
+      <SettingsRow label="Training">
         <Field label="Learning rate" info="Step size of the Adam optimizer.">
           <Select label="Learning rate" value={s.lr} options={LR_OPTIONS.map((v) => ({ value: v, label: String(v) }))} onChange={(v) => update({ lr: v })} />
         </Field>
@@ -41,31 +92,35 @@ export function SettingsPanel() {
             onChange={(v) => update({ regStrength: v })}
           />
         </Field>
-      </div>
-      <div className="row row-wide">
-        <Field
-          label="Layers"
-          info="Each layer re-uploads the input data through trainable rotations Rot(w·x + b). More layers make the model more expressive, like depth in a neural network."
-        >
-          <Slider label="Number of layers" value={s.numLayers} min={LAYERS.min} max={LAYERS.max} onChange={(v) => update({ numLayers: v })} />
+      </SettingsRow>
+
+      <SettingsRow
+        label="Uncertainty"
+        disabled={!regression}
+        info={
+          <>
+            Monte Carlo estimate of predictive uncertainty: every inference run adds N(0, σ²) noise to all weights and biases.
+            The band in the regression fit shows ±2 standard deviations.{!regression && ' Applies to regression tasks only.'}
+          </>
+        }
+      >
+        <Field label="Noise σ">
+          <Slider
+            label="Gaussian noise sigma"
+            value={s.noiseSigma}
+            min={SIGMA.min}
+            max={SIGMA.max}
+            step={SIGMA.step}
+            format={(v) => v.toFixed(2)}
+            onChange={(v) => update({ noiseSigma: v })}
+            disabled={!regression}
+          />
         </Field>
-        <Field label="Seed" info="Controls parameter initialization, data noise and shuffling. The same seed reproduces the same training run.">
-          <div className="seed">
-            <input
-              className="input"
-              type="number"
-              min={0}
-              aria-label="Random seed"
-              value={s.seed}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isInteger(v) && v >= 0 && v < 2 ** 32) update({ seed: v });
-              }}
-            />
-            <IconButton icon="dice" label="New random seed" onClick={() => update({ seed: Math.floor(Math.random() * 100000) })} />
-          </div>
+        <Field label="MC runs">
+          <Slider label="Monte Carlo runs" value={s.mcRuns} min={MC_RUNS.min} max={MC_RUNS.max} onChange={(v) => update({ mcRuns: v })} disabled={!regression} />
         </Field>
-      </div>
+        {!regression && <span className="settings-row-note muted small">regression only</span>}
+      </SettingsRow>
     </Panel>
   );
 }

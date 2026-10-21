@@ -13,4 +13,3 @@ declare module 'plotly.js/lib/scatter3d';
 declare module 'plotly.js/lib/surface';
 declare module 'plotly.js/lib/mesh3d';
 declare module 'plotly.js/lib/cone';
-declare module 'plotly.js/lib/contour';

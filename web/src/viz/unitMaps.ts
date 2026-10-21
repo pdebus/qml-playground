@@ -36,17 +36,26 @@ export function tangleValue(u: UnitMaps, l: number, p: number) {
   return u.tangle[l * u.points + p];
 }
 
-/** Classification: predicted class and confidence ∈ [0, 1] after layer l at point p (scores are normalized first). */
-export function classAt(u: UnitMaps, numClasses: number, l: number, p: number): { cls: number; confidence: number } {
-  const o = (l * u.points + p) * numClasses;
+/** Predicted class and confidence ∈ [0, 1] from numClasses scores at `offset` (scores are normalized first). */
+export function classFromScores(scores: ArrayLike<number>, offset: number, numClasses: number): { cls: number; confidence: number } {
   let sum = 0, best = 0;
   for (let c = 0; c < numClasses; c++) {
-    sum += u.scores[o + c];
-    if (u.scores[o + c] > u.scores[o + best]) best = c;
+    sum += scores[offset + c];
+    if (scores[offset + c] > scores[offset + best]) best = c;
   }
-  const pmax = sum > 0 ? u.scores[o + best] / sum : 1 / numClasses;
+  const pmax = sum > 0 ? scores[offset + best] / sum : 1 / numClasses;
   const chance = 1 / numClasses;
   return { cls: best, confidence: Math.max(0, Math.min(1, (pmax - chance) / (1 - chance))) };
+}
+
+/** Classification: predicted class and confidence after layer l at point p. */
+export function classAt(u: UnitMaps, numClasses: number, l: number, p: number): { cls: number; confidence: number } {
+  return classFromScores(u.scores, (l * u.points + p) * numClasses, numClasses);
+}
+
+/** Text for the model-output tooltip: the prediction at one input point. */
+export function describeClass(cls: number, confidence: number): string {
+  return `class ${cls} (confidence ${(confidence * 100).toFixed(0)}%)`;
 }
 
 /** Regression: ⟨Z₀⟩ (the model output) if measured after layer l. */
@@ -56,7 +65,7 @@ export function outputValue(u: UnitMaps, l: number, p: number) {
 
 // ---------- Colors ----------
 
-type RGB = [number, number, number];
+export type RGB = [number, number, number];
 
 function hex(h: string): RGB {
   const v = parseInt(h.slice(1), 16);
@@ -96,6 +105,11 @@ export function divergingColor(pal: UnitPalette, v: number): RGB {
 
 export function sequentialColor(pal: UnitPalette, v: number): RGB {
   return mix(pal.neutral, pal.sequential, Math.max(0, Math.min(1, v)));
+}
+
+/** Class color faded towards the background where the prediction is unsure, as in TF Playground. */
+export function classColor(pal: UnitPalette, cls: number, confidence: number): RGB {
+  return mix(pal.neutral, pal.classes[cls], 0.15 + 0.85 * confidence);
 }
 
 export function cssColor(c: RGB): string {

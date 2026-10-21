@@ -90,7 +90,7 @@ export interface Snapshot {
   layerVis: Float32Array;
   /** Test-set predictions: class index or ⟨Z⟩. */
   predictions: Float32Array;
-  /** Classification: decision value on a gridSize × gridSize grid (row-major, y outer). */
+  /** Classification: class scores on a gridSize × gridSize grid (row-major, y outer; [point][class]). */
   decision?: Float32Array;
   gridSize: number;
   /** Regression: MC prediction mean and std on DataInfo.regression.denseX. */

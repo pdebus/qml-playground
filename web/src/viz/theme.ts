@@ -10,7 +10,6 @@ export interface PlotTheme {
   accent: string;
   accentStrong: string;
   sceneBg: string;
-  contourMid: string;
   wrong: string;
   right: string;
 }
@@ -25,7 +24,6 @@ export const PLOT_THEMES: Record<ResolvedTheme, PlotTheme> = {
     accent: '#179c7d',
     accentStrong: '#006247',
     sceneBg: 'rgba(0,0,0,0)',
-    contourMid: '#ffffff',
     wrong: '#d62728',
     right: '#2ca02c',
   },
@@ -38,7 +36,6 @@ export const PLOT_THEMES: Record<ResolvedTheme, PlotTheme> = {
     accent: '#2bc49f',
     accentStrong: '#7fe0c6',
     sceneBg: 'rgba(0,0,0,0)',
-    contourMid: '#1b2422',
     wrong: '#ff6b6b',
     right: '#4cd47a',
   },

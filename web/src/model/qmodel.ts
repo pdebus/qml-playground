@@ -210,8 +210,8 @@ export class QuantumModel {
   }
 
   /**
-   * Decision value on an n×n grid over [-1, 1]² (row-major, y outer): fidelity with target 0 (1 qubit) or
-   * renormalized probability of class 0 (2 qubits), as in `evaluate_decision_boundary`.
+   * Class scores on an n×n grid over [-1, 1]² (row-major, y outer; [point][class]): fidelities with the class
+   * targets (1 qubit) or renormalized class probabilities (2 qubits). Class 0 matches `evaluate_decision_boundary`.
    */
   decisionGrid(n: number): Float64Array {
     const pts = new Float64Array(2 * n * n);
@@ -226,10 +226,11 @@ export class QuantumModel {
     const states = this.forwardAll(set);
     const per = this.config.numLayers * this.circuit.stateSize;
     const lastOffset = (this.config.numLayers - 1) * this.circuit.stateSize;
-    const z = new Float64Array(n * n);
+    const C = this.numClasses;
+    const z = new Float64Array(n * n * C);
     for (let i = 0; i < n * n; i++) {
       this.scores(states, i * per + lastOffset, this.probs);
-      z[i] = this.probs[0];
+      for (let c = 0; c < C; c++) z[i * C + c] = this.probs[c];
     }
     return z;
   }

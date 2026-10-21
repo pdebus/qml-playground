@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../../state/store';
 import { SPEED_OPTIONS } from '../../state/settings';
-import { Field, IconButton, Panel, Select } from '../controls/Controls';
+import { IconButton, Panel, Select } from '../controls/Controls';
 
 const speedLabel = (s: number) => (s === 0 ? 'Max' : `${s} / s`);
 
@@ -13,7 +13,7 @@ export function ControlPanel() {
   const { togglePlay, step, reset, fastForward, update } = useApp.getState();
 
   return (
-    <Panel title="Control" area="control">
+    <Panel title="Control" area="control" actions={<ShareButtons />}>
       <div className="transport">
         <IconButton icon="reset" label="Reset model" onClick={reset} />
         <IconButton icon={playing ? 'pause' : 'play'} label={playing ? 'Pause training' : 'Start training'} onClick={togglePlay} variant="primary" />
@@ -25,27 +25,19 @@ export function ControlPanel() {
           </span>
         </div>
       </div>
-      <div className="row">
-        <Field label="Speed" info="Training epochs per second while playing. 'Max' trains as fast as your device allows.">
-          <Select
-            label="Training speed"
-            value={speed}
-            options={SPEED_OPTIONS.map((s) => ({ value: s, label: speedLabel(s) }))}
-            onChange={(v) => update({ speed: v })}
-          />
-        </Field>
-        <Field label="Fast-forward">
-          <div className="button-row">
-            {[100, 1000].map((n) => (
-              <button key={n} type="button" className="btn" onClick={() => fastForward(n)} disabled={busy}>
-                +{n}
-              </button>
-            ))}
-          </div>
-        </Field>
+      <div className="inline-field">
+        <span className="field-label">Speed</span>
+        <Select
+          label="Training speed: epochs per second while playing"
+          value={speed}
+          options={SPEED_OPTIONS.map((s) => ({ value: s, label: speedLabel(s) }))}
+          onChange={(v) => update({ speed: v })}
+        />
       </div>
+      <button type="button" className="btn btn-block" onClick={() => fastForward(100)} disabled={busy} title="Train 100 epochs as fast as possible">
+        Fast-forward +100 epochs
+      </button>
       <EpochScrubber />
-      <ShareButtons />
     </Panel>
   );
 }
@@ -60,9 +52,13 @@ function EpochScrubber() {
     <div className="scrubber">
       <div className="field-label">
         Replay
-        <span className="muted">
-          {viewing ? `viewing epoch ${epoch} of ${latestEpoch}` : latestEpoch > firstEpoch ? 'drag to replay training' : ''}
-        </span>
+        <span className="muted">{latestEpoch > firstEpoch ? `ep ${epoch} / ${latestEpoch}` : ''}</span>
+        {viewing && (
+          <>
+            <IconButton icon="play" variant="small" label="Resume training from this epoch (discards later epochs)" onClick={() => resumeFrom(epoch)} />
+            <IconButton icon="latest" variant="small" label="Back to the latest epoch" onClick={goLive} />
+          </>
+        )}
       </div>
       <input
         type="range"
@@ -74,16 +70,6 @@ function EpochScrubber() {
         onChange={(e) => seek(Number(e.target.value))}
         style={{ ['--fill' as string]: `${((epoch - firstEpoch) / Math.max(1, latestEpoch - firstEpoch)) * 100}%` }}
       />
-      {viewing && (
-        <div className="button-row">
-          <button type="button" className="btn" onClick={() => resumeFrom(epoch)} title="Discard later epochs and continue training from here">
-            Resume from here
-          </button>
-          <button type="button" className="btn" onClick={goLive}>
-            Back to latest
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -94,25 +80,19 @@ function ShareButtons() {
     const url = useApp.getState().shareUrl(withParams);
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(withParams ? 'Link with trained model copied' : 'Link copied');
+      setCopied('Copied');
     } catch {
       window.prompt('Copy this link:', url);
     }
-    setTimeout(() => setCopied(null), 2000);
+    setTimeout(() => setCopied(null), 1600);
   };
   return (
-    <div className="share">
-      <div className="button-row">
-        <button type="button" className="btn" onClick={() => copy(false)} title="Link to the current settings">
-          Share settings
-        </button>
-        <button type="button" className="btn" onClick={() => copy(true)} title="Link that also restores the parameters shown right now">
-          Share trained model
-        </button>
-      </div>
-      <div className="field-hint" aria-live="polite">
-        {copied ?? ' '}
-      </div>
+    <div className="panel-actions">
+      <span className="copied muted small" aria-live="polite">
+        {copied ?? ''}
+      </span>
+      <IconButton icon="link" variant="small" label="Copy a link to the current settings" onClick={() => copy(false)} />
+      <IconButton icon="share" variant="small" label="Copy a link that also restores the trained model shown right now" onClick={() => copy(true)} />
     </div>
   );
 }

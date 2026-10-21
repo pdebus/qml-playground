@@ -18,7 +18,14 @@ describe('Trainer', () => {
     expect(s1.metrics.loss).toHaveLength(2);
     expect(s1.latestEpoch).toBe(2);
     expect(s1.layerVis).toHaveLength(300 * 3 * 4);
-    expect(s1.decision).toHaveLength(settings.gridSize ** 2);
+    const C = t.dataInfo().numClasses;
+    expect(s1.decision).toHaveLength(settings.gridSize ** 2 * C);
+    // Two qubits: renormalized class probabilities sum to 1 at every grid point.
+    for (let i = 0; i < 5; i++) {
+      let sum = 0;
+      for (let c = 0; c < C; c++) sum += s1.decision![i * C + c];
+      expect(sum).toBeCloseTo(1, 5);
+    }
   });
 
   it('seek shows historic parameters without changing the latest state', () => {

@@ -4,11 +4,10 @@ import scatter3d from 'plotly.js/lib/scatter3d';
 import surface from 'plotly.js/lib/surface';
 import mesh3d from 'plotly.js/lib/mesh3d';
 import cone from 'plotly.js/lib/cone';
-import contour from 'plotly.js/lib/contour';
 import { useEffect, useState } from 'react';
 
 // Partial bundle: only the trace types the playground uses.
-Plotly.register([scatter, scatter3d, surface, mesh3d, cone, contour]);
+Plotly.register([scatter, scatter3d, surface, mesh3d, cone]);
 
 export type Trace = Record<string, unknown>;
 export type Layout = Record<string, unknown>;

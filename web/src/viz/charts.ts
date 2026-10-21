@@ -3,11 +3,6 @@ import type { Figure, Layout, Trace } from './plotly';
 import { CLASS_COLORS, baseLayout, type PlotTheme } from './theme';
 
 const HIDDEN = { showticklabels: false, showgrid: false, zeroline: false, range: [-1, 1], fixedrange: true };
-const SQUARE = (t: PlotTheme) => ({
-  ...baseLayout(t),
-  xaxis: { ...HIDDEN, constrain: 'domain' },
-  yaxis: { ...HIDDEN, scaleanchor: 'x', constrain: 'domain' },
-});
 
 function axisFrame(t: PlotTheme, xref = 'x', yref = 'y') {
   return { type: 'rect', xref, yref, x0: -1, y0: -1, x1: 1, y1: 1, line: { color: t.grid, width: 1 }, layer: 'below' };
@@ -25,98 +20,12 @@ function split(x: Float64Array, labels: ArrayLike<number>, numClasses: number) {
   return out;
 }
 
-/** Classification data set (`make_data_plot`): test points colored by class. */
-export function dataFigure(t: PlotTheme, x: Float64Array, labels: Float64Array, numClasses: number): Figure {
-  return {
-    data: split(x, labels, numClasses).map((p, c) => ({
-      type: 'scatter',
-      mode: 'markers',
-      ...p,
-      marker: { color: CLASS_COLORS[c], size: 5 },
-      name: `Class ${c}`,
-      hovertemplate: `Class ${c}<br>(%{x:.2f}, %{y:.2f})<extra></extra>`,
-    })),
-    layout: { ...SQUARE(t), shapes: [axisFrame(t)] },
-  };
-}
-
-/** Regression data set (`make_regression_data_plot`). */
-export function regressionDataFigure(
-  t: PlotTheme,
-  x: Float64Array,
-  yTrue: Float64Array,
-  yNoisy: Float64Array,
-  mask: Uint8Array,
-): Figure {
-  const tx: number[] = [], ty: number[] = [];
-  mask.forEach((m, i) => {
-    if (m) {
-      tx.push(x[i]);
-      ty.push(yNoisy[i]);
-    }
-  });
-  return {
-    data: [
-      { type: 'scatter', mode: 'lines', x: Array.from(x), y: Array.from(yTrue), name: 'Ground truth', line: { color: CLASS_COLORS[0] } },
-      { type: 'scatter', mode: 'markers', x: tx, y: ty, name: 'Train samples', marker: { size: 4, color: CLASS_COLORS[1] } },
-    ],
-    layout: regressionAxes(t),
-  };
-}
-
 function regressionAxes(t: PlotTheme): Layout {
   return {
     ...baseLayout(t),
     margin: { l: 28, r: 4, t: 4, b: 20 },
     xaxis: { range: [-1, 1], gridcolor: t.grid, zerolinecolor: t.grid, fixedrange: true },
     yaxis: { gridcolor: t.grid, zerolinecolor: t.grid, fixedrange: true },
-  };
-}
-
-function linspace(n: number): number[] {
-  return Array.from({ length: n }, (_, i) => -1 + (2 * i) / (n - 1));
-}
-
-/** Decision boundary (`make_decision_boundary_plot`): score of class 0 on a grid plus the test points. */
-export function decisionFigure(
-  t: PlotTheme,
-  grid: Float32Array | null,
-  gridSize: number,
-  x: Float64Array,
-  labels: Float64Array,
-  numClasses: number,
-): Figure {
-  const axis = linspace(gridSize);
-  const z: number[][] = [];
-  for (let r = 0; r < gridSize; r++) z.push(grid ? Array.from(grid.subarray(r * gridSize, (r + 1) * gridSize)) : axis.map(() => 0.5));
-  return {
-    data: [
-      {
-        type: 'contour',
-        x: axis,
-        y: axis,
-        z,
-        zmin: 0,
-        zmax: 1,
-        showscale: false,
-        contours: { coloring: 'heatmap', showlines: false },
-        line: { smoothing: 0.5 },
-        colorscale: [
-          [0, '#ff9f1c'],
-          [0.5, t.contourMid],
-          [1, '#1f5fbf'],
-        ],
-        hovertemplate: 'score(class 0)=%{z:.2f}<extra></extra>',
-      },
-      ...split(x, labels, numClasses).map((p, c) => ({
-        type: 'scatter',
-        mode: 'markers',
-        ...p,
-        marker: { color: CLASS_COLORS[c], size: 4, line: { width: 1, color: '#ffffff' } },
-        hoverinfo: 'skip',
-      })),
-    ],
-    layout: SQUARE(t),
   };
 }
 
@@ -248,7 +157,15 @@ export function regressionFitFigure(
         name: '±2σ',
         hoverinfo: 'skip',
       },
-      { type: 'scatter', mode: 'lines', x: curve ? xs : [], y: mean, name: 'Prediction', line: { color: CLASS_COLORS[0], width: 2 } },
+      {
+        type: 'scatter',
+        mode: 'lines',
+        x: curve ? xs : [],
+        y: mean,
+        name: 'Prediction',
+        line: { color: CLASS_COLORS[0], width: 2 },
+        hovertemplate: 'x = %{x:.2f}<br>⟨Z⟩ = %{y:.3f}<extra>Model output</extra>',
+      },
       {
         type: 'scatter',
         mode: 'markers',
